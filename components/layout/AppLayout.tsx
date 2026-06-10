@@ -20,9 +20,13 @@ import {
   ClipboardList,
   CheckCircle2,
   RefreshCw,
-  Brain
+  Brain,
+  Trash2,
+  HelpCircle,
+  Play
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
+import toast from "react-hot-toast";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -41,7 +45,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const { alerts, userRole, setUserRole, location, setLocation } = useAlerts();
 
-  const cities = ["Chennai", "Coimbatore", "Madurai", "Salem", "Trichy"];
+  const cities = ["Chennai", "Coimbatore", "Bengaluru", "Hyderabad", "Mumbai", "Delhi"];
 
   // Load latest active alerts as notifications
   const recentActiveAlerts = useMemo(() => alerts.filter(a => a.status === "Active").slice(0, 5), [alerts]);
@@ -79,6 +83,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const markAllAsRead = () => {
     setUnreadIds([]);
+    toast.success("All notifications marked as read");
+  };
+
+  const deleteNotification = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    markAsRead(id);
+    // Real implementation would also remove it from context/backend
+    toast.success("Notification deleted");
   };
 
   const navigation = [
@@ -244,6 +256,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       onClick={() => {
                         setLocation(city);
                         setLocationMenuOpen(false);
+                        toast.success("Location updated successfully");
                       }}
                       className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between hover:bg-gray-50 transition-colors ${location === city ? 'text-primary-600 font-medium bg-primary-50/50' : 'text-gray-700'}`}
                     >
@@ -309,13 +322,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                   {alert.title}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1 line-clamp-1">{alert.description}</p>
-                                <div className="flex items-center gap-2 mt-2">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                    alert.severity === 'Critical' ? 'bg-red-100 text-red-700' :
-                                    alert.severity === 'High' ? 'bg-orange-100 text-orange-700' :
-                                    'bg-yellow-100 text-yellow-700'
-                                  }`}>{alert.severity}</span>
-                                  <span className="text-[10px] text-gray-400">{alert.timestamp}</span>
+                                <div className="flex items-center justify-between mt-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                      alert.severity === 'Critical' ? 'bg-red-100 text-red-700' :
+                                      alert.severity === 'High' ? 'bg-orange-100 text-orange-700' :
+                                      'bg-yellow-100 text-yellow-700'
+                                    }`}>{alert.severity}</span>
+                                    <span className="text-[10px] text-gray-400">{alert.timestamp}</span>
+                                  </div>
+                                  <button onClick={(e) => deleteNotification(alert.id, e)} className="text-gray-400 hover:text-red-500">
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -361,7 +379,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       }} 
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
                     >
-                      <User className="h-4 w-4" /> My Profile
+                      <User className="h-4 w-4" /> Profile
                     </button>
                     <button 
                       onClick={() => {
@@ -370,16 +388,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       }} 
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
                     >
-                      <Settings className="h-4 w-4" /> Settings
+                      <Settings className="h-4 w-4" /> My Settings
                     </button>
                     <button 
                       onClick={() => {
-                        setUserRole(userRole === "admin" ? "citizen" : "admin");
+                        setProfileMenuOpen(false);
+                        setNotificationsOpen(true);
+                      }} 
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Notifications</span>
+                      {unreadIds.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{unreadIds.length}</span>}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        toast("Help Center is coming soon!");
+                      }} 
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
+                    >
+                      <HelpCircle className="h-4 w-4" /> Help Center
+                    </button>
+                    <button 
+                      onClick={() => {
+                        toast.success("Demo Mode Activated!");
                         setProfileMenuOpen(false);
                       }} 
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
                     >
-                      <RefreshCw className="h-4 w-4" /> Switch Role
+                      <Play className="h-4 w-4 text-green-500" /> Demo Mode
                     </button>
                   </div>
                   
@@ -387,7 +424,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <button 
                       onClick={() => {
                         localStorage.clear();
-                        router.push("/login");
+                        router.push("/");
                       }} 
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
                     >

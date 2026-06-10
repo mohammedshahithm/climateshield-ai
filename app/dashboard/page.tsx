@@ -9,10 +9,16 @@ import {
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import { AlertCategory, Severity } from "@/lib/mockAlerts";
+import { X, Upload, CheckCircle2, ShieldAlert } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
-  const { alerts, location, showToast } = useAlerts();
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isEvacuationModalOpen, setIsEvacuationModalOpen] = useState(false);
+  const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
+  
+  const { alerts, location } = useAlerts();
 
   // Top 3 active alerts for the dashboard widget
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
@@ -238,7 +244,7 @@ export default function DashboardPage() {
             <h3 className="text-lg font-bold text-gray-900">Quick Actions</h3>
           </div>
           <div className="p-6 space-y-4">
-            <button onClick={() => showToast("Feature coming soon", "success")} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 hover:shadow-sm transition-all duration-300 group">
+            <button onClick={() => setIsReportModalOpen(true)} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 hover:shadow-sm transition-all duration-300 group">
               <div className="flex items-center gap-3">
                 <div className="bg-primary-100 p-2 rounded-lg group-hover:bg-primary-200 group-hover:scale-110 transition-all duration-300">
                   <Siren className="h-5 w-5 text-primary-600" />
@@ -247,7 +253,7 @@ export default function DashboardPage() {
               </div>
               <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-primary-600 group-hover:translate-x-1 transition-all duration-300" />
             </button>
-            <button onClick={() => showToast("Feature coming soon", "success")} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-secondary-500 hover:bg-secondary-50 hover:shadow-sm transition-all duration-300 group">
+            <button onClick={() => setIsEvacuationModalOpen(true)} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-secondary-500 hover:bg-secondary-50 hover:shadow-sm transition-all duration-300 group">
               <div className="flex items-center gap-3">
                 <div className="bg-secondary-100 p-2 rounded-lg group-hover:bg-secondary-200 group-hover:scale-110 transition-all duration-300">
                   <MapPin className="h-5 w-5 text-secondary-600" />
@@ -256,7 +262,7 @@ export default function DashboardPage() {
               </div>
               <ArrowRight className="h-4 w-4 text-gray-400 group-hover:text-secondary-600 group-hover:translate-x-1 transition-all duration-300" />
             </button>
-            <button onClick={() => showToast("Feature coming soon", "success")} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-red-500 hover:bg-red-50 hover:shadow-sm transition-all duration-300 group">
+            <button onClick={() => setIsContactsModalOpen(true)} className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-red-500 hover:bg-red-50 hover:shadow-sm transition-all duration-300 group">
               <div className="flex items-center gap-3">
                 <div className="bg-red-100 p-2 rounded-lg group-hover:bg-red-200 group-hover:scale-110 transition-all duration-300">
                   <PhoneCall className="h-5 w-5 text-red-600" />
@@ -268,6 +274,148 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Report Incident Modal */}
+      {isReportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><Siren className="h-5 w-5 text-primary-500" /> Report Incident</h2>
+              <button onClick={() => setIsReportModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              setIsReportModalOpen(false);
+              toast.success("Incident reported successfully");
+            }} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Incident Type</label>
+                <select required className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
+                  <option value="">Select Type...</option>
+                  <option value="flood">Flooding / Waterlogging</option>
+                  <option value="infrastructure">Fallen Tree / Powerline</option>
+                  <option value="fire">Fire / Smoke</option>
+                  <option value="other">Other Emergency</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Location</label>
+                <div className="relative">
+                  <input required type="text" defaultValue={location} className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Description</label>
+                <textarea required rows={3} placeholder="Describe the situation..." className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"></textarea>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Upload Image</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 flex flex-col items-center justify-center text-gray-500 hover:bg-gray-50 hover:border-primary-400 cursor-pointer transition-colors">
+                  <Upload className="h-6 w-6 mb-2 text-gray-400" />
+                  <span className="text-sm">Click to upload or drag & drop</span>
+                  <span className="text-xs text-gray-400 mt-1">PNG, JPG, up to 5MB</span>
+                </div>
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setIsReportModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                <button type="submit" className="px-6 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" /> Submit Report
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Evacuation Routes Modal */}
+      {isEvacuationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-secondary-50">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><MapPin className="h-5 w-5 text-secondary-600" /> Evacuation Routes</h2>
+              <button onClick={() => setIsEvacuationModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                <h3 className="text-sm font-bold text-red-800 uppercase tracking-wider mb-1">Risk Zone</h3>
+                <p className="text-red-600 font-medium">{location} - Zone A (High Flood Risk)</p>
+              </div>
+              
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 mb-3">Primary Route Instructions</h3>
+                <ol className="relative border-s border-gray-200 ml-3 space-y-4">                  
+                  <li className="mb-4 ms-4">
+                      <div className="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -start-1.5 border border-white"></div>
+                      <p className="text-sm font-normal text-gray-600">Head North on Main St towards the elevated highway.</p>
+                  </li>
+                  <li className="mb-4 ms-4">
+                      <div className="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -start-1.5 border border-white"></div>
+                      <p className="text-sm font-normal text-gray-600">Take exit 4B towards the safe zone.</p>
+                  </li>
+                  <li className="ms-4">
+                      <div className="absolute w-3 h-3 bg-secondary-500 rounded-full mt-1.5 -start-1.5 border border-white"></div>
+                      <p className="text-sm font-medium text-gray-900">Arrive at Relief Center.</p>
+                  </li>
+                </ol>
+              </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mt-4">
+                <h3 className="text-sm font-bold text-gray-900 mb-1">Nearest Shelter</h3>
+                <p className="text-gray-600 text-sm">Central High School Gymnasium<br/>1.2 miles away • Capacity: 450/500</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency Contacts Modal */}
+      {isContactsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl overflow-hidden animate-in zoom-in-95">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2"><PhoneCall className="h-5 w-5 text-red-600" /> Emergency Contacts</h2>
+              <button onClick={() => setIsContactsModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-2">
+              <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-100 p-2 rounded-lg"><ShieldAlert className="h-5 w-5 text-blue-600" /></div>
+                  <div><p className="font-bold text-gray-900">Police</p><p className="text-xs text-gray-500">Law enforcement</p></div>
+                </div>
+                <a href="tel:100" className="bg-blue-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-blue-700">100</a>
+              </div>
+              <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="bg-orange-100 p-2 rounded-lg"><ThermometerSun className="h-5 w-5 text-orange-600" /></div>
+                  <div><p className="font-bold text-gray-900">Fire</p><p className="text-xs text-gray-500">Fire & Rescue</p></div>
+                </div>
+                <a href="tel:101" className="bg-orange-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-orange-700">101</a>
+              </div>
+              <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-50">
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-100 p-2 rounded-lg"><ActivitySquare className="h-5 w-5 text-green-600" /></div>
+                  <div><p className="font-bold text-gray-900">Ambulance</p><p className="text-xs text-gray-500">Medical emergency</p></div>
+                </div>
+                <a href="tel:108" className="bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-green-700">108</a>
+              </div>
+              <div className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-100 p-2 rounded-lg"><Siren className="h-5 w-5 text-red-600" /></div>
+                  <div><p className="font-bold text-gray-900">Disaster Mgmt</p><p className="text-xs text-gray-500">NDRF / SDRF</p></div>
+                </div>
+                <a href="tel:112" className="bg-red-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-red-700">112</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,14 +6,14 @@ import {
   CheckCircle2, Save, X, Monitor, Smartphone, Mail, AlertTriangle, Cloud, ThermometerSun, Droplets, Building, Key, Download, Trash2, MapPin
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import toast from "react-hot-toast";
 
 // Initial default states
 const defaultProfile = {
   fullName: "Jane Doe",
   email: "jane.doe@example.gov",
   phone: "+1 (555) 012-3456",
-  location: "Washington, DC",
-  role: "Emergency Management Director"
+  organization: "Emergency Management Dept"
 };
 
 const defaultNotifications = {
@@ -33,7 +33,6 @@ const defaultRiskMonitoring = {
 export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
-  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
   const { setTheme } = useTheme();
 
   // States
@@ -68,45 +67,38 @@ export default function SettingsPage() {
     setIsMounted(true);
   }, []);
 
-  const showToast = (message: string) => {
-    setToast({ message, visible: true });
-    setTimeout(() => {
-      setToast({ message: "", visible: false });
-    }, 3000);
-  };
-
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault();
     localStorage.setItem("cs_profile", JSON.stringify(profile));
-    showToast("Profile settings saved successfully.");
+    toast.success("Profile settings saved successfully");
   };
 
   const toggleNotification = (key: keyof typeof defaultNotifications) => {
     const newNotifs = { ...notifications, [key]: !notifications[key] };
     setNotifications(newNotifs);
     localStorage.setItem("cs_notifications", JSON.stringify(newNotifs));
-    showToast("Notification preferences updated.");
+    toast.success("Notification preferences updated.");
   };
 
   const toggleRisk = (key: keyof typeof defaultRiskMonitoring) => {
     const newRisks = { ...riskMonitoring, [key]: !riskMonitoring[key] };
     setRiskMonitoring(newRisks);
     localStorage.setItem("cs_risk_monitoring", JSON.stringify(newRisks));
-    showToast("Risk monitoring preferences updated.");
+    toast.success("Risk monitoring preferences updated.");
   };
 
   const changeAppearance = (val: string) => {
     setAppearance(val);
     setTheme(val);
     localStorage.setItem("cs_appearance", val);
-    showToast(`Appearance changed to ${val}.`);
+    toast.success(`Appearance changed to ${val}.`);
   };
 
   const toggle2FA = () => {
     const newVal = !twoFactor;
     setTwoFactor(newVal);
     localStorage.setItem("cs_2fa", JSON.stringify(newVal));
-    showToast(newVal ? "Two-Factor Authentication enabled." : "Two-Factor Authentication disabled.");
+    toast.success(newVal ? "Two-Factor Authentication enabled." : "Two-Factor Authentication disabled.");
   };
 
   const exportUserData = () => {
@@ -126,7 +118,7 @@ export default function SettingsPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast("User data exported successfully.");
+    toast.success("User data exported successfully.");
   };
 
   const downloadHistory = () => {
@@ -139,13 +131,13 @@ export default function SettingsPage() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast("Assessment history downloaded.");
+    toast.success("Assessment history downloaded.");
   };
 
   const handleDeleteAccount = () => {
     localStorage.clear();
     setIsDeleteModalOpen(false);
-    showToast("Account deleted. (Simulation)");
+    toast.success("Account deleted. (Simulation)");
     // In a real app, this would redirect to login or signup
   };
 
@@ -162,16 +154,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 relative pb-10">
-      {/* Toast Notification */}
-      {toast.visible && (
-        <div className="fixed bottom-6 right-6 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 className="w-5 h-5 text-green-400" />
-          <span className="text-sm font-medium">{toast.message}</span>
-          <button onClick={() => setToast({ message: "", visible: false })} className="ml-2 text-gray-400 hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* Header */}
       <div>
@@ -241,21 +223,12 @@ export default function SettingsPage() {
                       className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-colors"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">Location</label>
-                    <input
-                      type="text"
-                      value={profile.location}
-                      onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                      className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-colors"
-                    />
-                  </div>
                   <div className="space-y-2 md:col-span-2">
-                    <label className="text-sm font-medium text-gray-700">Role</label>
+                    <label className="text-sm font-medium text-gray-700">Organization</label>
                     <input
                       type="text"
-                      value={profile.role}
-                      onChange={(e) => setProfile({ ...profile, role: e.target.value })}
+                      value={profile.organization || ''}
+                      onChange={(e) => setProfile({ ...profile, organization: e.target.value })}
                       className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-colors"
                     />
                   </div>
@@ -527,7 +500,7 @@ export default function SettingsPage() {
             <form onSubmit={(e) => {
               e.preventDefault();
               setIsPasswordModalOpen(false);
-              showToast("Password updated successfully.");
+              toast.success("Password updated successfully");
             }} className="p-6 space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">Current Password</label>

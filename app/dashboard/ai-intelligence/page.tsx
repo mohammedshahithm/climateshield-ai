@@ -90,9 +90,29 @@ export default function AiIntelligencePage() {
             Predictive climate analytics powered by ClimateShield AI
           </p>
         </div>
-        <div className="px-4 py-2 bg-primary-50 border border-primary-100 rounded-lg flex items-center gap-2" title="AI Model is actively crunching 24 live data sources">
-          <Zap className="h-4 w-4 text-primary-600 fill-primary-600 animate-pulse" />
-          <span className="text-sm font-bold text-primary-700">Live Prediction Engine Active</span>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="px-4 py-2 bg-primary-50 border border-primary-100 rounded-lg flex items-center gap-2" title="AI Model is actively crunching 24 live data sources">
+            <Zap className="h-4 w-4 text-primary-600 fill-primary-600 animate-pulse" />
+            <span className="text-sm font-bold text-primary-700">Live Prediction Engine Active</span>
+          </div>
+          <button 
+            onClick={() => {
+              setIsLoading(true);
+              setTimeout(() => {
+                setIsLoading(false);
+                showToast("Forecast Refreshed", "success");
+              }, 1500);
+            }} 
+            className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg flex items-center gap-2 text-sm font-bold text-gray-700 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Forecast
+          </button>
+          <button 
+            onClick={() => showToast("Exporting PDF Report...", "success")} 
+            className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg flex items-center gap-2 text-sm font-bold text-gray-700 transition-colors"
+          >
+            <BarChart2 className="h-4 w-4" /> Export Report
+          </button>
         </div>
       </div>
 

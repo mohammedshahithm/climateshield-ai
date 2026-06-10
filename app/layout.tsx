@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AlertsProvider } from "@/lib/AlertsContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { Toaster } from "react-hot-toast";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -29,6 +30,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AlertsProvider>
             {children}
+            <Toaster position="bottom-right" />
           </AlertsProvider>
         </ThemeProvider>
       </body>

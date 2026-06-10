@@ -543,6 +543,7 @@ export default function AdminDashboardPage() {
         <DeployResourceModal 
           onClose={() => setIsDeployModalOpen(false)}
           onDeploy={handleDeployResource}
+          showToast={showToast}
         />
       )}
     </div>
@@ -705,7 +706,7 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
 }
 
 // Sub-component for Deploy Resource Modal
-function DeployResourceModal({ onClose, onDeploy }: { onClose: () => void, onDeploy: (data: { type: string, unit: string, location: string, incident: string, priority: string }) => void }) {
+function DeployResourceModal({ onClose, onDeploy, showToast }: { onClose: () => void, onDeploy: (data: { type: string, unit: string, location: string, incident: string, priority: string }) => void, showToast: (msg: string, type: "success" | "error") => void }) {
   const [formData, setFormData] = useState({
     type: "Rescue Squad",
     unit: "Rescue Squad Alpha",
@@ -717,7 +718,7 @@ function DeployResourceModal({ onClose, onDeploy }: { onClose: () => void, onDep
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.location) {
-      alert("Please specify a target location");
+      showToast("Please specify a target location", "error");
       return;
     }
     onDeploy(formData);
