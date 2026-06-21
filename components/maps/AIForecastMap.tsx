@@ -3,9 +3,10 @@
 import { useEffect } from "react";
 import { MapContainer, TileLayer, Circle, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { useLocation } from "@/providers/LocationContext";
 
-// Fix for leaflet map sizing
-function MapResizeFix() {
+// Fix for leaflet map sizing and coordinate centering updates
+function MapResizeFix({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -13,12 +14,17 @@ function MapResizeFix() {
     }, 200);
     return () => clearTimeout(timer);
   }, [map]);
+
+  useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+
   return null;
 }
 
 export default function AIForecastMap() {
-  // Center roughly over Chennai
-  const center: [number, number] = [13.0827, 80.2707];
+  const { latitude, longitude } = useLocation();
+  const center: [number, number] = [latitude, longitude];
 
   return (
     <div className="h-full w-full relative z-0">
@@ -28,7 +34,7 @@ export default function AIForecastMap() {
         className="h-full w-full z-0"
         zoomControl={true}
       >
-        <MapResizeFix />
+        <MapResizeFix center={center} />
         
         {/* Dark style tile layer for a more "AI/Tech" feel, falling back to standard if needed */}
         <TileLayer
@@ -38,7 +44,7 @@ export default function AIForecastMap() {
 
         {/* Heatwave Expansion - Large diffuse circle */}
         <Circle 
-          center={[13.0500, 80.2200]} 
+          center={[latitude - 0.0327, longitude - 0.0507]} 
           radius={6000} 
           pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.15, weight: 1, dashArray: '5, 5' }}
         >
@@ -58,7 +64,7 @@ export default function AIForecastMap() {
 
         {/* Current High Risk - Solid orange */}
         <Circle 
-          center={[12.9754, 80.2206]} // Velachery
+          center={[latitude - 0.1073, longitude - 0.0501]} // Velachery offset
           radius={1500} 
           pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.4, weight: 2 }}
         >
@@ -78,7 +84,7 @@ export default function AIForecastMap() {
 
         {/* Predicted Critical Risk - Solid Red */}
         <Circle 
-          center={[13.1000, 80.2800]} // North Chennai
+          center={[latitude + 0.0173, longitude + 0.0093]} // North Chennai offset
           radius={2000} 
           pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.5, weight: 2 }}
         >
@@ -98,7 +104,7 @@ export default function AIForecastMap() {
 
         {/* Moderate Risk - Yellow */}
         <Circle 
-          center={[13.0200, 80.1800]} 
+          center={[latitude - 0.0627, longitude - 0.0907]} 
           radius={2500} 
           pathOptions={{ color: '#eab308', fillColor: '#eab308', fillOpacity: 0.3, weight: 2 }}
         >
@@ -118,7 +124,7 @@ export default function AIForecastMap() {
         
         {/* Low Risk / Safe Zone - Green */}
         <Circle 
-          center={[12.9200, 80.1300]} 
+          center={[latitude - 0.1627, longitude - 0.1407]} 
           radius={3000} 
           pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.2, weight: 2 }}
         >

@@ -5,12 +5,25 @@ import Link from "next/link";
 import { 
   MapPin, 
   ActivitySquare, CloudRain, Wind, ThermometerSun,
-  Droplets, ArrowRight, Siren, PhoneCall, Sun, FileX, CloudLightning
+  Droplets, ArrowRight, Siren, PhoneCall, Sun, FileX, CloudLightning,
+  Cloud, CloudSnow
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import { AlertCategory, Severity } from "@/lib/mockAlerts";
 import { X, Upload, CheckCircle2, ShieldAlert } from "lucide-react";
 import toast from "react-hot-toast";
+import { useWeather } from "@/hooks/useWeather";
+import { useAirQuality } from "@/hooks/useAirQuality";
+import { useFloodRisk } from "@/hooks/useFloodRisk";
+import { useLocation } from "@/providers/LocationContext";
+
+const WeatherIconMap = {
+  Sun: Sun,
+  Cloud: Cloud,
+  CloudRain: CloudRain,
+  CloudLightning: CloudLightning,
+  CloudSnow: CloudSnow,
+};
 
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
@@ -18,10 +31,48 @@ export default function DashboardPage() {
   const [isEvacuationModalOpen, setIsEvacuationModalOpen] = useState(false);
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
   
-  const { alerts, location } = useAlerts();
+  const { alerts, location, loading: alertsLoading } = useAlerts();
+  const { latitude, longitude } = useLocation();
+  const { weather, loading: isWeatherLoading, error: weatherError, refresh: refreshWeather } = useWeather(latitude, longitude);
+  const { airQuality, loading: isAqiLoading, error: aqiError, refresh: refreshAqi } = useAirQuality(
+    latitude,
+    longitude
+  );
+  const { floodRisk, loading: isFloodLoading, error: floodError, refresh: refreshFlood } = useFloodRisk(
+    latitude,
+    longitude
+  );
 
   // Top 3 active alerts for the dashboard widget
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
+
+  // Heat Wave status and logic based on today's maximum temperature
+  const todayMaxTemp = weather?.todayMaxTemp;
+  let heatWaveTemp = "104°F";
+  let heatWaveStatus = "High Risk";
+  let heatWaveColorClass = "bg-red-100 text-red-800 animate-pulse";
+  let heatWaveWarning = "Warning active until 8 PM";
+  let heatWaveTextClass = "text-red-600";
+
+  if (todayMaxTemp !== undefined) {
+    heatWaveTemp = `${todayMaxTemp}°F`;
+    if (todayMaxTemp >= 100) {
+      heatWaveStatus = "High Risk";
+      heatWaveColorClass = "bg-red-100 text-red-800 animate-pulse";
+      heatWaveWarning = "Warning active until 8 PM";
+      heatWaveTextClass = "text-red-600";
+    } else if (todayMaxTemp >= 90) {
+      heatWaveStatus = "Moderate Risk";
+      heatWaveColorClass = "bg-yellow-100 text-yellow-800";
+      heatWaveWarning = "Caution advised during peak hours";
+      heatWaveTextClass = "text-amber-600";
+    } else {
+      heatWaveStatus = "Low Risk";
+      heatWaveColorClass = "bg-green-100 text-green-800";
+      heatWaveWarning = "Normal temperature levels";
+      heatWaveTextClass = "text-green-600";
+    }
+  }
 
   useEffect(() => {
     // Simulate data loading
@@ -93,83 +144,182 @@ export default function DashboardPage() {
       </div>
 
       {/* Weather Widget */}
-      <div className="bg-gradient-to-r from-secondary-900 to-secondary-800 rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden flex items-center justify-between">
-        <div className="absolute top-0 right-0 p-8 opacity-10">
-          <Sun className="h-32 w-32" />
+      {isWeatherLoading ? (
+        <div className="bg-gradient-to-r from-secondary-900 to-secondary-800 rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden flex items-center justify-between animate-pulse">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8 w-full">
+            <div className="text-center sm:text-left flex flex-col sm:flex-row sm:items-center gap-4 w-full">
+              <div className="space-y-2">
+                <div className="h-10 w-20 bg-white/20 rounded-lg"></div>
+                <div className="h-4 w-24 bg-white/20 rounded-lg"></div>
+              </div>
+              <div className="hidden sm:block h-16 w-px bg-white/20 mx-2"></div>
+              <div className="text-left mt-2 sm:mt-0 space-y-2 flex-1">
+                <div className="h-6 w-40 bg-white/20 rounded-lg"></div>
+                <div className="h-4 w-60 bg-white/20 rounded-lg"></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
-          <div className="text-center sm:text-left flex flex-col sm:flex-row sm:items-center gap-4">
+      ) : weatherError || !weather ? (
+        <div className="bg-gradient-to-r from-red-950 to-red-900 rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden flex items-center justify-between">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
             <div>
-              <p className="text-5xl sm:text-6xl font-extrabold tracking-tighter">72°</p>
-              <p className="text-secondary-200 font-medium mt-1">Clear Skies</p>
+              <h3 className="font-bold text-lg">Unable to load live weather</h3>
+              <p className="text-red-200 text-sm mt-1">{weatherError || "An unexpected error occurred while fetching weather data."}</p>
             </div>
-            <div className="hidden sm:block h-16 w-px bg-white/20 mx-2"></div>
-            <div className="text-left mt-2 sm:mt-0">
-              <p className="font-bold text-lg sm:text-xl">{location}, TN</p>
-              <p className="text-sm text-secondary-300 mt-1">Humidity: 45% • Wind: 12mph NW</p>
+            <button 
+              onClick={refreshWeather} 
+              className="px-4 py-2 bg-white/25 hover:bg-white/20 border border-white/20 rounded-xl text-sm font-semibold transition-colors duration-200 cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-gradient-to-r from-secondary-900 to-secondary-800 rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden flex items-center justify-between">
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            {(() => {
+              const Icon = WeatherIconMap[weather.iconName] || Sun;
+              return <Icon className="h-32 w-32" />;
+            })()}
+          </div>
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
+            <div className="text-center sm:text-left flex flex-col sm:flex-row sm:items-center gap-4">
+              <div>
+                <p className="text-5xl sm:text-6xl font-extrabold tracking-tighter">{weather.temperature}°</p>
+                <p className="text-secondary-200 font-medium mt-1">{weather.condition}</p>
+              </div>
+              <div className="hidden sm:block h-16 w-px bg-white/20 mx-2"></div>
+              <div className="text-left mt-2 sm:mt-0">
+                <p className="font-bold text-lg sm:text-xl">{weather.locationName}</p>
+                <p className="text-sm text-secondary-300 mt-1">
+                  Humidity: {weather.humidity}% • Wind: {weather.windSpeed}mph {weather.windDirection}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="relative z-10 hidden md:flex gap-4 text-center">
+            <div className="bg-white/10 rounded-xl px-5 py-3 backdrop-blur-sm border border-white/10 shadow-sm">
+              <p className="text-xs text-secondary-300 uppercase tracking-wider font-semibold mb-2">Tomorrow</p>
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const Icon = WeatherIconMap[weather.tomorrowIconName] || CloudRain;
+                  return <Icon className="h-6 w-6 text-blue-300" />;
+                })()}
+                <span className="font-bold text-lg">{weather.tomorrowTemperature}°</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="relative z-10 hidden md:flex gap-4 text-center">
-          <div className="bg-white/10 rounded-xl px-5 py-3 backdrop-blur-sm border border-white/10 shadow-sm">
-            <p className="text-xs text-secondary-300 uppercase tracking-wider font-semibold mb-2">Tomorrow</p>
-            <div className="flex items-center gap-2">
-              <CloudRain className="h-6 w-6 text-blue-300" />
-              <span className="font-bold text-lg">65°</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Risk Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 cursor-default group">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100 group-hover:scale-110 transition-all duration-300">
-              <Droplets className="h-6 w-6" />
+        {isFloodLoading ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between animate-pulse">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
+                <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+              </div>
+              <div className="h-4 w-24 bg-gray-200 rounded mb-2"></div>
+              <div className="h-8 w-16 bg-gray-200 rounded"></div>
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-              Low Risk
-            </span>
           </div>
-          <h3 className="text-gray-500 text-sm font-medium">Flood Risk</h3>
-          <p className="text-2xl font-bold text-gray-900 mt-1">12%</p>
-          <div className="mt-4 text-sm text-gray-600 flex items-center gap-1 group-hover:text-blue-600 transition-colors">
-            <MapPin className="h-4 w-4 opacity-70" /> Downtown Area
+        ) : floodError || !floodRisk ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex flex-col hover:shadow-md hover:border-red-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between h-[180px]">
+            <div>
+              <h3 className="text-red-500 text-sm font-semibold">Flood Risk Error</h3>
+              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{floodError || "Failed to load flood risk"}</p>
+            </div>
+            <button 
+              onClick={refreshFlood} 
+              className="mt-2 w-full py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg transition-colors border border-red-200 cursor-pointer"
+            >
+              Retry
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-100 group-hover:scale-110 transition-all duration-300">
+                  <Droplets className="h-6 w-6" />
+                </div>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${floodRisk.colorClass}`}>
+                  {floodRisk.status}
+                </span>
+              </div>
+              <h3 className="text-gray-500 text-sm font-medium">Flood Risk</h3>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{floodRisk.score}%</p>
+            </div>
+            <div className="mt-4 text-xs text-gray-600 flex items-start gap-1 group-hover:text-blue-600 transition-colors">
+              <MapPin className="h-4 w-4 opacity-70 mt-0.5 shrink-0" />
+              <span className="leading-tight">{floodRisk.reasoning}</span>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-orange-200 hover:-translate-y-1 transition-all duration-300 cursor-default group">
           <div className="flex justify-between items-start mb-4">
             <div className="p-2 bg-orange-50 text-orange-600 rounded-lg group-hover:bg-orange-100 group-hover:scale-110 transition-all duration-300">
               <ThermometerSun className="h-6 w-6" />
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 animate-pulse">
-              High Risk
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${heatWaveColorClass}`}>
+              {heatWaveStatus}
             </span>
           </div>
           <h3 className="text-gray-500 text-sm font-medium">Heat Wave</h3>
-          <p className="text-2xl font-bold text-gray-900 mt-1">104°F</p>
-          <div className="mt-4 text-sm text-red-600 font-medium">
-            Warning active until 8 PM
+          <p className="text-2xl font-bold text-gray-900 mt-1">{heatWaveTemp}</p>
+          <div className={`mt-4 text-sm font-medium ${heatWaveTextClass}`}>
+            {heatWaveWarning}
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-teal-200 hover:-translate-y-1 transition-all duration-300 cursor-default group">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-2 bg-teal-50 text-teal-600 rounded-lg group-hover:bg-teal-100 group-hover:scale-110 transition-all duration-300">
-              <Wind className="h-6 w-6" />
+        {isAqiLoading ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-teal-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between animate-pulse">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
+                <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+              </div>
+              <div className="h-4 w-24 bg-gray-200 rounded mb-2"></div>
+              <div className="h-8 w-16 bg-gray-200 rounded"></div>
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-              Moderate
-            </span>
           </div>
-          <h3 className="text-gray-500 text-sm font-medium">Air Quality Index</h3>
-          <p className="text-2xl font-bold text-gray-900 mt-1">75</p>
-          <div className="mt-4 text-sm text-gray-600">
-            PM2.5 slightly elevated
+        ) : aqiError || !airQuality ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex flex-col hover:shadow-md hover:border-red-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between h-[180px]">
+            <div>
+              <h3 className="text-red-500 text-sm font-semibold">Air Quality Error</h3>
+              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{aqiError || "Failed to load AQI"}</p>
+            </div>
+            <button 
+              onClick={refreshAqi} 
+              className="mt-2 w-full py-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-lg transition-colors border border-red-200 cursor-pointer"
+            >
+              Retry
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-teal-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2 bg-teal-50 text-teal-600 rounded-lg group-hover:bg-teal-100 group-hover:scale-110 transition-all duration-300">
+                  <Wind className="h-6 w-6" />
+                </div>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${airQuality.colorClass}`}>
+                  {airQuality.status}
+                </span>
+              </div>
+              <h3 className="text-gray-500 text-sm font-medium">Air Quality Index</h3>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{airQuality.usAqi}</p>
+            </div>
+            <div className="mt-4 text-xs text-gray-500 space-y-1">
+              <div>PM2.5: {airQuality.pm25} µg/m³ • PM10: {airQuality.pm10} µg/m³</div>
+              <div>O₃: {airQuality.ozone} µg/m³ • NO₂: {airQuality.no2} µg/m³</div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-purple-200 hover:-translate-y-1 transition-all duration-300 cursor-default group">
           <div className="flex justify-between items-start mb-4">
@@ -198,7 +348,21 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div className="divide-y divide-gray-100 flex-1">
-            {topActiveAlerts.length > 0 ? (
+            {alertsLoading ? (
+              [...Array(3)].map((_, i) => (
+                <div key={i} className="p-6 animate-pulse flex items-start gap-4">
+                  <div className="bg-gray-200 h-9 w-9 rounded-full shrink-0"></div>
+                  <div className="flex-1 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+                      <div className="h-4 bg-gray-200 rounded w-12"></div>
+                    </div>
+                    <div className="h-3.5 bg-gray-200 rounded w-5/6"></div>
+                    <div className="h-3 bg-gray-200 rounded w-1/4 mt-2"></div>
+                  </div>
+                </div>
+              ))
+            ) : topActiveAlerts.length > 0 ? (
               topActiveAlerts.map(alert => (
                 <Link href="/dashboard/alerts" key={alert.id}>
                   <div className="p-6 hover:bg-gray-50 transition-colors cursor-pointer group">
@@ -303,7 +467,7 @@ export default function DashboardPage() {
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">Location</label>
                 <div className="relative">
-                  <input required type="text" defaultValue={location} className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <input required type="text" defaultValue={weather?.locationName || location} className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" />
                   <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 </div>
               </div>
@@ -343,7 +507,7 @@ export default function DashboardPage() {
             <div className="p-6 space-y-5">
               <div className="bg-red-50 p-4 rounded-xl border border-red-100">
                 <h3 className="text-sm font-bold text-red-800 uppercase tracking-wider mb-1">Risk Zone</h3>
-                <p className="text-red-600 font-medium">{location} - Zone A (High Flood Risk)</p>
+                <p className="text-red-600 font-medium">{weather?.locationName || location} - Zone A (High Flood Risk)</p>
               </div>
               
               <div>

@@ -51,7 +51,7 @@ const getIconForType = (type: string) => {
   return shelterIcon;
 };
 
-function MapResizeFix() {
+function MapResizeFix({ center }: { center: [number, number] }) {
   const map = useMap();
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -59,6 +59,11 @@ function MapResizeFix() {
     }, 200);
     return () => clearTimeout(timer);
   }, [map]);
+
+  useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+
   return null;
 }
 
@@ -87,7 +92,7 @@ export default function AdminMapComponent({ markers, center }: AdminMapProps) {
         scrollWheelZoom={false}
         dragging={true}
       >
-        <MapResizeFix />
+        <MapResizeFix center={center} />
         
         <TileLayer
           attribution='&copy; OpenStreetMap'

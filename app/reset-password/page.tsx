@@ -1,31 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ShieldAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "react-hot-toast";
 
-export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
+export default function ResetPasswordPage() {
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const supabase = createClient();
 
-  const handleReset = async (e: React.FormEvent) => {
+  useEffect(() => {
+    // Check if the user is authenticated (they should be, after clicking the reset link)
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Invalid or expired password reset link.");
+        router.push("/login");
+      }
+    };
+    checkSession();
+  }, [router, supabase.auth]);
+
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+    const { error } = await supabase.auth.updateUser({
+      password: password,
     });
 
     if (error) {
       toast.error(error.message);
+      setLoading(false);
     } else {
-      toast.success("Password reset link sent to your email.");
-      setEmail("");
+      toast.success("Password updated successfully.");
+      router.push("/dashboard");
     }
-    setLoading(false);
   };
 
   return (
@@ -36,27 +50,27 @@ export default function ForgotPasswordPage() {
             <ShieldAlert className="h-10 w-10 text-primary-500 mx-auto" />
             <span className="font-bold text-2xl tracking-tight">ClimateShield</span>
           </Link>
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Reset your password</h2>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Set new password</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Enter your email address and we&apos;ll send you a link to reset your password.
+            Please enter your new password below.
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleReset}>
+        <form className="mt-8 space-y-6" onSubmit={handleResetPassword}>
           <div className="rounded-md shadow-sm space-y-4">
             <div>
-              <label htmlFor="email-address" className="block text-sm font-medium text-gray-700">
-                Email address
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                New Password
               </label>
               <input
-                id="email-address"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="new-password"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                placeholder="name@example.com"
+                placeholder="••••••••"
               />
             </div>
           </div>
@@ -67,15 +81,8 @@ export default function ForgotPasswordPage() {
               disabled={loading}
               className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Sending..." : "Send Reset Link"}
+              {loading ? "Updating..." : "Update Password"}
             </button>
-          </div>
-          
-          <div className="text-center">
-            <Link href="/login" className="inline-flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900">
-              <ArrowLeft className="h-4 w-4" />
-              Back to login
-            </Link>
           </div>
         </form>
       </div>

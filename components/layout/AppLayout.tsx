@@ -23,12 +23,16 @@ import {
   Brain,
   Trash2,
   HelpCircle,
-  Play
+  Play,
+  AlertTriangle
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import toast from "react-hot-toast";
+import { useAuthContext } from "@/providers/AuthProvider";
+import { useLocation, CityLocation } from "@/providers/LocationContext";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { logout } = useAuthContext();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [unreadIds, setUnreadIds] = useState<string[]>([]);
@@ -39,13 +43,86 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const locationRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
   
   const pathname = usePathname();
   const router = useRouter();
 
-  const { alerts, userRole, setUserRole, location, setLocation } = useAlerts();
+  const { alerts, userRole, setUserRole } = useAlerts();
+  const { city: location, setLocation, recentLocations } = useLocation();
 
-  const cities = ["Chennai", "Coimbatore", "Bengaluru", "Hyderabad", "Mumbai", "Delhi"];
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<CityLocation[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchCache = useRef<Record<string, CityLocation[]>>({});
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    if (searchCache.current[trimmed]) {
+      setSuggestions(searchCache.current[trimmed]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError(null);
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trimmed)}&count=5&language=en&format=json`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error("Failed to fetch location suggestions");
+        }
+        const data = await res.json();
+        const results = (data.results || []).map((item: any) => ({
+          name: item.name,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          region: item.admin1 || "",
+          country: item.country || "",
+        }));
+
+        searchCache.current[trimmed] = results;
+        setSuggestions(results);
+      } catch (err) {
+        console.error("Geocoding error:", err);
+        setSearchError("Failed to fetch locations");
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const selectCity = (cityObj: CityLocation) => {
+    setLocation(cityObj.name, cityObj.latitude, cityObj.longitude, cityObj.region, cityObj.country);
+    setSearchQuery("");
+    setShowSuggestions(false);
+    toast.success(`Location updated to ${cityObj.name}`);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (suggestions.length > 0) {
+        selectCity(suggestions[0]);
+      } else if (!searchLoading) {
+        toast.error(`No matches found for "${searchQuery}".`);
+      }
+    }
+  };
 
   // Load latest active alerts as notifications
   const recentActiveAlerts = useMemo(() => alerts.filter(a => a.status === "Active").slice(0, 5), [alerts]);
@@ -72,6 +149,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileMenuOpen(false);
       }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -97,6 +177,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Assessment", href: "/dashboard/assessment", icon: ClipboardList },
     { name: "Risk Maps", href: "/dashboard/risk-maps", icon: Map },
+    { name: "Incidents", href: "/dashboard/incidents", icon: AlertTriangle },
     { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
     { name: "AI Intelligence", href: "/dashboard/ai-intelligence", icon: Brain },
     ...(userRole === "admin" ? [{ name: "Admin Center", href: "/dashboard/admin", icon: Settings }] : []),
@@ -138,10 +219,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <div className="p-4 border-t border-secondary-800">
-            <Link href="/login" className="flex items-center gap-3 px-3 py-2 rounded-md text-secondary-100 hover:bg-secondary-800 transition-colors">
+            <button onClick={logout} className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-secondary-100 hover:bg-secondary-800 transition-colors text-left">
               <LogOut className="h-5 w-5" />
               Sign Out
-            </Link>
+            </button>
           </div>
         </div>
       </div>
@@ -200,9 +281,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <p className="text-xs text-secondary-400 truncate">{userRole}@example.com</p>
               </div>
             </div>
-            <Link href="/login" className="text-secondary-400 hover:text-white transition-colors" title="Sign Out">
+            <button onClick={logout} className="text-secondary-400 hover:text-white transition-colors" title="Sign Out">
               <LogOut className="h-5 w-5" />
-            </Link>
+            </button>
           </div>
         </div>
       </div>
@@ -219,7 +300,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Search Bar */}
-          <div className="flex-1 flex items-center max-w-2xl">
+          <div className="flex-1 flex items-center max-w-2xl relative" ref={searchRef}>
             <div className="hidden lg:flex w-full">
               <div className="relative w-full text-gray-400 focus-within:text-gray-600 transition-colors">
                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -227,9 +308,62 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
                 <input 
                   type="text" 
+                  value={searchQuery}
+                  onChange={e => {
+                    setSearchQuery(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onFocus={() => setShowSuggestions(true)}
                   className="block w-full h-10 pl-10 pr-3 border border-gray-200 text-gray-900 bg-gray-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent focus:bg-white sm:text-sm transition-all" 
-                  placeholder="Search locations, risks, or reports..." 
+                  placeholder="Search locations (e.g. London, Tokyo, New York)..." 
                 />
+                
+                {/* Suggestions Dropdown */}
+                {showSuggestions && (searchLoading || searchError || suggestions.length > 0) && (
+                  <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in slide-in-from-top-2 max-h-60 overflow-y-auto">
+                    {searchLoading && (
+                      <div className="px-4 py-3 text-sm text-gray-500 flex items-center gap-2">
+                        <span className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent shrink-0" />
+                        Searching locations...
+                      </div>
+                    )}
+                    {searchError && (
+                      <div className="px-4 py-3 text-sm text-red-500">
+                        {searchError}
+                      </div>
+                    )}
+                    {!searchLoading && !searchError && suggestions.length > 0 && (
+                      <>
+                        <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+                          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Matching Cities</p>
+                        </div>
+                        {suggestions.map((city, idx) => (
+                          <button
+                            key={`${city.name}-${idx}`}
+                            onClick={() => selectCity(city)}
+                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors text-gray-700 flex items-center justify-between"
+                          >
+                            <span className="font-medium flex items-center gap-2">
+                              <MapPin className="h-4 w-4 text-primary-500 shrink-0" />
+                              <span>
+                                {city.name}
+                                {(city.region || city.country) && (
+                                  <span className="text-xs text-gray-400 font-normal ml-1.5">
+                                    {city.region ? `${city.region}, ` : ""}{city.country}
+                                  </span>
+                                )}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              {city.latitude.toFixed(4)}°N, {city.longitude.toFixed(4)}°E
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -246,22 +380,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
               
               {locationMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in slide-in-from-top-2">
-                  <div className="px-3 py-2 border-b border-gray-100">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Select Region</p>
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in slide-in-from-top-2 max-h-72 overflow-y-auto">
+                  <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/50">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent Locations</p>
                   </div>
-                  {cities.map(city => (
+                  {recentLocations.map((cityObj, idx) => (
                     <button
-                      key={city}
+                      key={`${cityObj.name}-${cityObj.latitude}-${idx}`}
                       onClick={() => {
-                        setLocation(city);
+                        setLocation(cityObj.name, cityObj.latitude, cityObj.longitude, cityObj.region, cityObj.country);
                         setLocationMenuOpen(false);
-                        toast.success("Location updated successfully");
+                        toast.success(`Location updated to ${cityObj.name}`);
                       }}
-                      className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between hover:bg-gray-50 transition-colors ${location === city ? 'text-primary-600 font-medium bg-primary-50/50' : 'text-gray-700'}`}
+                      className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between hover:bg-gray-50 transition-colors ${location === cityObj.name ? 'text-primary-600 font-medium bg-primary-50/50' : 'text-gray-700'}`}
                     >
-                      {city}
-                      {location === city && <CheckCircle2 className="h-4 w-4 text-primary-500" />}
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-semibold truncate">{cityObj.name}</span>
+                        {(cityObj.region || cityObj.country) && (
+                          <span className="text-[10px] text-gray-400 truncate">
+                            {cityObj.region ? `${cityObj.region}, ` : ""}{cityObj.country}
+                          </span>
+                        )}
+                      </div>
+                      {location === cityObj.name && <CheckCircle2 className="h-4 w-4 text-primary-500 shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -422,10 +563,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   
                   <div className="border-t border-gray-100 py-1">
                     <button 
-                      onClick={() => {
-                        localStorage.clear();
-                        router.push("/");
-                      }} 
+                      onClick={logout} 
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
                     >
                       <LogOut className="h-4 w-4" /> Logout

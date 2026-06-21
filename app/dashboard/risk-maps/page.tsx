@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { 
   Search, ShieldAlert, Droplets, ThermometerSun, 
-  Wind, ActivitySquare, Users, Home, MapPin
+  Wind, ActivitySquare, Users, Home, MapPin, Loader2, AlertCircle
 } from "lucide-react";
+import { useLocation } from "@/providers/LocationContext";
+import { fetchWeather, fetchLocationName, geocodeAddress } from "@/lib/weather";
+import { fetchAirQuality } from "@/lib/airQuality";
+import { fetchFloodRisk } from "@/lib/floodRisk";
+import toast from "react-hot-toast";
+import { createClient } from "@/lib/supabase/client";
 
 // The MapComponent must be dynamically imported because Leaflet requires window
 const MapComponent = dynamic(() => import("@/components/maps/MapComponent"), { 
@@ -18,116 +24,303 @@ const MapComponent = dynamic(() => import("@/components/maps/MapComponent"), {
   )
 });
 
-export type MapActiveLayers = {
-  flood: boolean;
-  heat: boolean;
-  airQuality: boolean;
-  infra: boolean;
-};
+import type { RiskMarkerData, MapActiveLayers } from "@/components/maps/MapComponent";
 
-import type { RiskMarkerData } from "@/components/maps/MapComponent";
-
-// Expanded Mock Data
-export const mockMarkers: RiskMarkerData[] = [
-  {
-    id: "m1",
-    name: "Anna Nagar",
-    lat: 13.0850,
-    lng: 80.2100,
-    overallRisk: "Moderate",
-    score: 55,
-    floodRisk: "High",
-    heatRisk: "Moderate",
-    airQualityRisk: "Moderate",
-    infraRisk: "High",
-    shelter: "Anna Nagar Tower Park Hub",
-    shelterLat: 13.0840,
-    shelterLng: 80.2110,
-    action: "Clear storm drains and prepare sandbags."
-  },
-  {
-    id: "m2",
-    name: "Velachery",
-    lat: 12.9754,
-    lng: 80.2206,
-    overallRisk: "Critical",
-    score: 85,
-    floodRisk: "Critical",
-    heatRisk: "High",
-    airQualityRisk: "Low",
-    infraRisk: "Critical",
-    shelter: "Velachery Aquatic Complex",
-    shelterLat: 12.9720,
-    shelterLng: 80.2215,
-    action: "Immediate evacuation routes planning required."
-  },
-  {
-    id: "m3",
-    name: "Adyar",
-    lat: 13.0033,
-    lng: 80.2555,
-    overallRisk: "Low",
-    score: 25,
-    floodRisk: "Low",
-    heatRisk: "Moderate",
-    airQualityRisk: "Low",
-    infraRisk: "Low",
-    shelter: "Adyar Indoor Stadium",
-    shelterLat: 13.0010,
-    shelterLng: 80.2540,
-    action: "Maintain baseline preparedness. No immediate threat."
-  },
-  {
-    id: "m5",
-    name: "T Nagar",
-    lat: 13.0418,
-    lng: 80.2341,
-    overallRisk: "High",
-    score: 72,
-    floodRisk: "Moderate",
-    heatRisk: "Critical",
-    airQualityRisk: "High",
-    infraRisk: "Moderate",
-    shelter: "Panagal Park Community Hall",
-    shelterLat: 13.0430,
-    shelterLng: 80.2360,
-    action: "Deploy urban cooling misting stations."
-  }
+// Predefined worldwide cities to show on the map for climate intelligence
+const PRESET_CITIES = [
+  { id: "chennai", name: "Chennai, India", lat: 13.0827, lng: 80.2707, shelter: "Chennai Central Shelter", shelterLat: 13.0815, shelterLng: 80.2720 },
+  { id: "newyork", name: "New York, USA", lat: 40.7128, lng: -74.0060, shelter: "Manhattan Relief Hub", shelterLat: 40.7140, shelterLng: -74.0045 },
+  { id: "london", name: "London, UK", lat: 51.5074, lng: -0.1278, shelter: "Westminster Safe Zone", shelterLat: 51.5085, shelterLng: -0.1260 },
+  { id: "tokyo", name: "Tokyo, Japan", lat: 35.6762, lng: 139.6503, shelter: "Shinjuku Shelter Station", shelterLat: 35.6780, shelterLng: 139.6480 },
+  { id: "sydney", name: "Sydney, Australia", lat: -33.8688, lng: 151.2093, shelter: "Sydney Town Hall Hub", shelterLat: -33.8700, shelterLng: 151.2080 },
 ];
+
+// Helper to fetch weather, AQI, and flood risk data in parallel for a given location
+async function fetchMarkerData(
+  id: string,
+  name: string,
+  lat: number,
+  lng: number,
+  shelter?: string,
+  shelterLat?: number,
+  shelterLng?: number
+): Promise<RiskMarkerData> {
+  const [weather, aqi, flood] = await Promise.all([
+    fetchWeather(lat, lng),
+    fetchAirQuality(lat, lng),
+    fetchFloodRisk(lat, lng),
+  ]);
+
+  // Determine sub-risk levels
+  let floodLevel = 0;
+  if (flood.score > 75) floodLevel = 3;
+  else if (flood.score > 50) floodLevel = 2;
+  else if (flood.score > 25) floodLevel = 1;
+
+  let aqiLevel = 0;
+  if (aqi.usAqi > 150) aqiLevel = 3;
+  else if (aqi.usAqi > 100) aqiLevel = 2;
+  else if (aqi.usAqi > 50) aqiLevel = 1;
+
+  let heatLevel = 0;
+  if (weather.temperature > 100) heatLevel = 3;
+  else if (weather.temperature > 90) heatLevel = 2;
+  else if (weather.temperature > 80) heatLevel = 1;
+
+  const maxLevel = Math.max(floodLevel, aqiLevel, heatLevel);
+  const overallRisk: "Low" | "Moderate" | "High" | "Critical" =
+    maxLevel === 3 ? "Critical" :
+    maxLevel === 2 ? "High" :
+    maxLevel === 1 ? "Moderate" : "Low";
+
+  let action = "Maintain baseline preparedness. No immediate threat.";
+  if (overallRisk === "Critical") {
+    action = "Severe warning active. Evacuation planning recommended.";
+  } else if (overallRisk === "High") {
+    action = "High vulnerability detected. Limit exposure & secure assets.";
+  } else if (overallRisk === "Moderate") {
+    action = "Moderate risk. Monitor updates and clear storm drains.";
+  }
+
+  // Composite risk score: max of flood score and AQI-normalized score
+  const score = Math.max(flood.score, Math.round((aqi.usAqi / 300) * 100));
+
+  return {
+    id,
+    name,
+    lat,
+    lng,
+    overallRisk,
+    score,
+    temperature: weather.temperature,
+    humidity: weather.humidity,
+    aqi: aqi.usAqi,
+    aqiStatus: aqi.status,
+    floodRisk: flood.score,
+    floodRiskStatus: flood.status,
+    action,
+    shelter,
+    shelterLat,
+    shelterLng,
+  };
+}
 
 export default function RiskMapsPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [center, setCenter] = useState<[number, number]>([13.0827, 80.2707]);
+  const { city: contextCity, latitude, longitude, setLocation } = useLocation();
+  const [center, setCenter] = useState<[number, number]>([latitude, longitude]);
   const [highlightedMarker, setHighlightedMarker] = useState<string | null>(null);
+  const [markers, setMarkers] = useState<RiskMarkerData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const [activeLayers, setActiveLayers] = useState<MapActiveLayers>({
+    weather: true,
+    airQuality: true,
     flood: true,
-    heat: false,
-    airQuality: false,
-    infra: false,
+    incidents: true,
   });
 
-  const handleSearch = (e: React.FormEvent) => {
+  const [incidents, setIncidents] = useState<any[]>([]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    async function loadIncidents() {
+      try {
+        const { data, error } = await supabase.from("incidents").select("*");
+        if (error) {
+          console.error("Error loading incidents:", error);
+        } else if (data) {
+          setIncidents(data);
+        }
+      } catch (err) {
+        console.error("Failed to load incidents on map:", err);
+      }
+    }
+    loadIncidents();
+  }, []);
+
+  // Re-sync center when global context location changes
+  useEffect(() => {
+    setCenter([latitude, longitude]);
+  }, [latitude, longitude]);
+
+  // Load weather, AQI, and flood risk data for all markers on coordinates change
+  useEffect(() => {
+    let active = true;
+
+    async function loadAllData() {
+      setLoading(true);
+      setError(null);
+      try {
+        const currentSelected = {
+          id: "selected",
+          name: contextCity ? `${contextCity} (Selected Location)` : "Selected Location",
+          lat: latitude,
+          lng: longitude,
+          shelter: "Local Safe Zone Hub",
+          shelterLat: latitude + 0.003,
+          shelterLng: longitude + 0.003,
+        };
+
+        // Filter presets to avoid duplication if user selected one of them
+        const otherPresets = PRESET_CITIES.filter(
+          preset => Math.abs(preset.lat - latitude) > 0.05 || Math.abs(preset.lng - longitude) > 0.05
+        );
+
+        const targets = [currentSelected, ...otherPresets];
+
+        const results = await Promise.all(
+          targets.map(async (t) => {
+            try {
+              return await fetchMarkerData(
+                t.id,
+                t.name,
+                t.lat,
+                t.lng,
+                t.shelter,
+                t.shelterLat,
+                t.shelterLng
+              );
+            } catch (e) {
+              console.error(`Failed to fetch live data for ${t.name}:`, e);
+              // Safe fallback marker
+              return {
+                id: t.id,
+                name: t.name,
+                lat: t.lat,
+                lng: t.lng,
+                overallRisk: "Low" as const,
+                score: 10,
+                temperature: 72,
+                humidity: 60,
+                aqi: 25,
+                aqiStatus: "Good",
+                floodRisk: 5,
+                floodRiskStatus: "Low Risk",
+                action: "Live data retrieval failed; displaying baseline parameters.",
+                shelter: t.shelter,
+                shelterLat: t.shelterLat,
+                shelterLng: t.shelterLng,
+              };
+            }
+          })
+        );
+
+        if (active) {
+          setMarkers(results);
+        }
+      } catch (err) {
+        console.error("Failed to load map climate data:", err);
+        if (active) {
+          setError("Unable to retrieve climate metrics. Please check network.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadAllData();
+    return () => {
+      active = false;
+    };
+  }, [latitude, longitude, contextCity]);
+
+  // Handle global search form submit
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const query = searchQuery.toLowerCase();
-    const found = mockMarkers.find(m => m.name.toLowerCase().includes(query));
-    if (found) {
-      setCenter([found.lat, found.lng]);
-      setHighlightedMarker(found.id);
-    } else {
-      alert("Location not found. Try 'Velachery' or 'T Nagar'.");
-      setHighlightedMarker(null);
+    const query = searchQuery.trim();
+    if (!query) {
+      toast.error("Please enter a location to search.");
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const geocoded = await geocodeAddress(query);
+      if (!geocoded) {
+        toast.error("Location not found. Please try another search.");
+        return;
+      }
+      
+      // Update global context location, triggers coordinates effect
+      setLocation(
+        geocoded.name,
+        geocoded.latitude,
+        geocoded.longitude,
+        geocoded.region,
+        geocoded.country
+      );
+      
+      setCenter([geocoded.latitude, geocoded.longitude]);
+      setHighlightedMarker("selected");
+      setSearchQuery("");
+      toast.success(`Located: ${geocoded.name}`);
+    } catch (err: any) {
+      console.error("Geocoding failed:", err);
+      
+      let errorMessage = "An error occurred while searching. Please try again.";
+      if (err instanceof Error) {
+        if (err.name === "TimeoutError" || err.message.includes("timeout") || err.message.includes("aborted")) {
+          errorMessage = "Search timed out. Please check your network connection and try again.";
+        } else if (err.message.includes("Failed to fetch") || err.message.includes("network")) {
+          errorMessage = "Network error. Please check your internet connection.";
+        } else if (err.message.includes("Geocoding server responded")) {
+          errorMessage = "Search service is temporarily unavailable. Please try again later.";
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setSearchLoading(false);
     }
   };
 
+  // Handle click on map to select/fetch new location
+  const handleMapClick = async (lat: number, lng: number) => {
+    setSearchLoading(true);
+    try {
+      const reverseName = await fetchLocationName(lat, lng);
+      
+      // Extract a short city name
+      const cityPart = reverseName.split(",")[0] || "Custom Point";
+      
+      // Update global location context
+      setLocation(cityPart, lat, lng);
+      
+      setCenter([lat, lng]);
+      setHighlightedMarker("selected");
+      toast.success(`Selected: ${cityPart}`);
+    } catch (err) {
+      console.error("Map click reverse geocoding failed:", err);
+      toast.error("Failed to fetch location name.");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Fly to target station from list click
+  const selectStation = (marker: RiskMarkerData) => {
+    setCenter([marker.lat, marker.lng]);
+    setHighlightedMarker(marker.id);
+  };
+
+  // Live stats calculated from active markers
   const stats = useMemo(() => {
+    const total = markers.length;
+    if (total === 0) return { highRisk: 0, moderate: 0, stations: 0, critical: 0 };
     return {
-      highRisk: mockMarkers.filter(m => m.overallRisk === "High" || m.overallRisk === "Critical").length,
-      moderate: mockMarkers.filter(m => m.overallRisk === "Moderate").length,
-      shelters: mockMarkers.length,
-      protected: "42,500"
+      highRisk: markers.filter(m => m.overallRisk === "High").length,
+      critical: markers.filter(m => m.overallRisk === "Critical").length,
+      moderate: markers.filter(m => m.overallRisk === "Moderate").length,
+      stations: total,
     };
-  }, []);
+  }, [markers]);
 
   return (
     <div className="h-[calc(100vh-6rem)] flex flex-col space-y-4 pb-4">
@@ -140,7 +333,14 @@ export default function RiskMapsPage() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full xl:w-auto">
           <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-red-100 text-red-600 rounded-lg"><ShieldAlert className="h-5 w-5" /></div>
+            <div className="p-2 bg-red-100 text-red-600 rounded-lg"><ShieldAlert className="h-5 w-5 animate-pulse" /></div>
+            <div>
+              <p className="text-xs text-gray-500 font-medium uppercase">Critical</p>
+              <p className="text-lg font-bold text-gray-900 leading-none">{stats.critical} Zones</p>
+            </div>
+          </div>
+          <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
+            <div className="p-2 bg-orange-100 text-orange-600 rounded-lg"><AlertCircle className="h-5 w-5" /></div>
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase">High Risk</p>
               <p className="text-lg font-bold text-gray-900 leading-none">{stats.highRisk} Zones</p>
@@ -156,15 +356,8 @@ export default function RiskMapsPage() {
           <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
             <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Home className="h-5 w-5" /></div>
             <div>
-              <p className="text-xs text-gray-500 font-medium uppercase">Shelters</p>
-              <p className="text-lg font-bold text-gray-900 leading-none">{stats.shelters} Active</p>
-            </div>
-          </div>
-          <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center gap-3">
-            <div className="p-2 bg-green-100 text-green-600 rounded-lg"><Users className="h-5 w-5" /></div>
-            <div>
-              <p className="text-xs text-gray-500 font-medium uppercase">Protected</p>
-              <p className="text-lg font-bold text-gray-900 leading-none">{stats.protected}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase">Stations</p>
+              <p className="text-lg font-bold text-gray-900 leading-none">{stats.stations} Active</p>
             </div>
           </div>
         </div>
@@ -177,77 +370,153 @@ export default function RiskMapsPage() {
         <div className="w-full md:w-72 flex flex-col gap-4 shrink-0 overflow-y-auto">
           {/* Search Box */}
           <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm shrink-0">
-            <h3 className="font-bold text-gray-900 mb-3 text-sm">Location Search</h3>
+            <h3 className="font-bold text-gray-900 mb-3 text-sm">Global Search</h3>
             <form onSubmit={handleSearch} className="relative">
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search area..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                placeholder="Search city, region, or country..."
+                disabled={searchLoading}
+                className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none disabled:bg-gray-50"
               />
               <Search className="h-4 w-4 text-gray-400 absolute left-3 top-2.5" />
+              {searchLoading && (
+                <Loader2 className="h-4 w-4 text-primary-500 animate-spin absolute right-3 top-2.5" />
+              )}
             </form>
+            <p className="text-[10px] text-gray-400 mt-2 font-medium">Or click anywhere on the map to query climate details.</p>
           </div>
 
           {/* Layer Toggles */}
-          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1">
-            <h3 className="font-bold text-gray-900 mb-4 text-sm">Risk Layers</h3>
-            <div className="space-y-3">
-              <label className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Droplets className="h-4 w-4 text-blue-500" />
-                  Flood Risk
-                </div>
-                <input type="checkbox" checked={activeLayers.flood} onChange={(e) => setActiveLayers({...activeLayers, flood: e.target.checked})} className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" />
-              </label>
-
-              <label className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm shrink-0">
+            <h3 className="font-bold text-gray-900 mb-3 text-sm">Climate Layers</h3>
+            <div className="space-y-2">
+              <label className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <ThermometerSun className="h-4 w-4 text-orange-500" />
-                  Heat Risk
+                  Weather Layer
                 </div>
-                <input type="checkbox" checked={activeLayers.heat} onChange={(e) => setActiveLayers({...activeLayers, heat: e.target.checked})} className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" />
+                <input 
+                  type="checkbox" 
+                  checked={activeLayers.weather} 
+                  onChange={(e) => setActiveLayers({...activeLayers, weather: e.target.checked})} 
+                  className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" 
+                />
               </label>
 
-              <label className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+              <label className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Wind className="h-4 w-4 text-gray-500" />
-                  Air Quality
+                  <Wind className="h-4 w-4 text-teal-500" />
+                  AQI Layer
                 </div>
-                <input type="checkbox" checked={activeLayers.airQuality} onChange={(e) => setActiveLayers({...activeLayers, airQuality: e.target.checked})} className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" />
+                <input 
+                  type="checkbox" 
+                  checked={activeLayers.airQuality} 
+                  onChange={(e) => setActiveLayers({...activeLayers, airQuality: e.target.checked})} 
+                  className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" 
+                />
               </label>
 
-              <label className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+              <label className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <ActivitySquare className="h-4 w-4 text-purple-500" />
-                  Infrastructure
+                  <Droplets className="h-4 w-4 text-blue-500" />
+                  Flood Risk Layer
                 </div>
-                <input type="checkbox" checked={activeLayers.infra} onChange={(e) => setActiveLayers({...activeLayers, infra: e.target.checked})} className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" />
+                <input 
+                  type="checkbox" 
+                  checked={activeLayers.flood} 
+                  onChange={(e) => setActiveLayers({...activeLayers, flood: e.target.checked})} 
+                  className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" 
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  Citizen Incidents
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={activeLayers.incidents || false} 
+                  onChange={(e) => setActiveLayers({...activeLayers, incidents: e.target.checked})} 
+                  className="h-4 w-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500" 
+                />
               </label>
             </div>
+          </div>
+
+          {/* Tracked Stations List */}
+          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1 flex flex-col min-h-[220px]">
+            <h3 className="font-bold text-gray-900 mb-3 text-sm shrink-0 flex items-center justify-between">
+              <span>Climate Stations</span>
+              {loading && <Loader2 className="h-3.5 w-3.5 text-gray-400 animate-spin" />}
+            </h3>
             
-            <div className="mt-6 pt-4 border-t border-gray-100">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Map Markers</h4>
-              <div className="space-y-2 text-xs font-medium text-gray-600">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500 border border-white shadow-sm" /> Low Risk Zone</div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500 border border-white shadow-sm" /> Moderate Risk Zone</div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-500 border border-white shadow-sm" /> High Risk Zone</div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow-sm" /> Critical Risk Zone</div>
-                <div className="flex items-center gap-2 mt-2"><Home className="h-3.5 w-3.5 text-blue-500" /> Emergency Shelter</div>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {markers.map((marker) => (
+                <button
+                  key={marker.id}
+                  onClick={() => selectStation(marker)}
+                  className={`w-full text-left p-2.5 rounded-lg border transition-all text-xs font-medium cursor-pointer ${
+                    highlightedMarker === marker.id
+                      ? "border-primary-500 bg-primary-50/50"
+                      : "border-gray-100 hover:border-gray-200 hover:bg-gray-50/80"
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-bold text-gray-900 truncate max-w-[130px]">{marker.name}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      marker.overallRisk === "Low" ? "bg-green-100 text-green-700" :
+                      marker.overallRisk === "Moderate" ? "bg-yellow-100 text-yellow-700" :
+                      marker.overallRisk === "High" ? "bg-orange-100 text-orange-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>{marker.overallRisk}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500 mt-1">
+                    <span>Temp: {marker.temperature}°F</span>
+                    <span>AQI: {marker.aqi}</span>
+                    <span>Flood: {marker.floodRisk}%</span>
+                  </div>
+                </button>
+              ))}
+              
+              {!loading && markers.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 py-8">
+                  <MapPin className="h-8 w-8 mb-2 opacity-50" />
+                  <span className="text-xs">No active climate stations loaded.</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-4 pt-3 border-t border-gray-100 shrink-0">
+              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Legend</h4>
+              <div className="grid grid-cols-2 gap-y-1.5 text-[10px] font-semibold text-gray-600">
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500" /> Low Risk</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-yellow-500" /> Moderate</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-500" /> High Risk</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Critical</div>
               </div>
             </div>
           </div>
         </div>
 
         {/* Map Container Area */}
-        {/* We use relative positioning and z-0 so Leaflet's stacking context works without overlapping header */}
         <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shadow-sm relative min-h-[400px] z-0">
+          {error && (
+            <div className="absolute inset-x-4 top-4 z-[1000] bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs font-semibold flex items-center gap-2 shadow-md">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          
           <MapComponent 
             center={center} 
-            markers={mockMarkers} 
+            markers={markers} 
+            incidents={incidents}
             activeLayers={activeLayers} 
             highlightedMarker={highlightedMarker}
+            onMapClick={handleMapClick}
           />
         </div>
 

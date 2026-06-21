@@ -4,6 +4,8 @@ import "./globals.css";
 import { AlertsProvider } from "@/lib/AlertsContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "react-hot-toast";
+import { AuthProvider } from "@/providers/AuthProvider";
+import { LocationProvider } from "@/providers/LocationContext";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -28,10 +30,14 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <AlertsProvider>
-            {children}
-            <Toaster position="bottom-right" />
-          </AlertsProvider>
+          <AuthProvider>
+            <LocationProvider>
+              <AlertsProvider>
+                {children}
+                <Toaster position="bottom-right" />
+              </AlertsProvider>
+            </LocationProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

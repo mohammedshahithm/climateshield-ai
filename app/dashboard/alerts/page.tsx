@@ -14,13 +14,14 @@ import {
   PhoneCall,
   Clock,
   MapPin,
-  ChevronRight
+  ChevronRight,
+  AlertCircle
 } from "lucide-react";
 import { ClimateAlert, Severity, AlertCategory } from "@/lib/mockAlerts";
 import { useAlerts } from "@/lib/AlertsContext";
 
 export default function AlertsPage() {
-  const { alerts: mockAlerts } = useAlerts();
+  const { alerts: mockAlerts, loading, error } = useAlerts();
   const [filter, setFilter] = useState<string>("All Alerts");
   const [selectedAlert, setSelectedAlert] = useState<ClimateAlert | null>(null);
 
@@ -59,6 +60,32 @@ export default function AlertsPage() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-6 pb-12">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Climate Alerts</h1>
+          <p className="text-sm text-gray-500">Real-time localized emergency and advisory notices.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, idx) => (
+            <div key={idx} className="bg-white rounded-xl border border-gray-100 p-5 animate-pulse flex flex-col space-y-4 h-[180px]">
+              <div className="flex justify-between items-center">
+                <div className="h-9 w-9 bg-gray-200 rounded-lg"></div>
+                <div className="h-5 w-16 bg-gray-200 rounded-md"></div>
+              </div>
+              <div className="h-6 bg-gray-200 rounded-md w-3/4"></div>
+              <div className="space-y-2 mt-auto pt-4">
+                <div className="h-4 bg-gray-200 rounded-md w-1/2"></div>
+                <div className="h-3.5 bg-gray-200 rounded-md w-1/3"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       {/* Header */}
@@ -68,6 +95,16 @@ export default function AlertsPage() {
           <p className="text-sm text-gray-500">Real-time localized emergency and advisory notices.</p>
         </div>
       </div>
+
+      {/* Error / Cache Notice */}
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900 text-sm flex items-center gap-3 animate-in fade-in">
+          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
+          <div>
+            <span className="font-bold">Offline / Cache Mode:</span> {error}
+          </div>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm overflow-x-auto no-scrollbar">
