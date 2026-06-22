@@ -4,10 +4,12 @@ import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { 
   Search, ShieldAlert, Droplets, ThermometerSun, 
-  Wind, ActivitySquare, Users, Home, MapPin, Loader2, AlertCircle
+  Wind, ActivitySquare, Users, Home, MapPin, Loader2, AlertCircle,
+  Ambulance, Users2
 } from "lucide-react";
 import { useLocation } from "@/providers/LocationContext";
 import { fetchWeather, fetchLocationName, geocodeAddress } from "@/lib/weather";
+import { useResourceShelters, Shelter, Resource } from "@/lib/ResourceShelterContext";
 import { fetchAirQuality } from "@/lib/airQuality";
 import { fetchFloodRisk } from "@/lib/floodRisk";
 import toast from "react-hot-toast";
@@ -25,6 +27,18 @@ const MapComponent = dynamic(() => import("@/components/maps/MapComponent"), {
 });
 
 import type { RiskMarkerData, MapActiveLayers } from "@/components/maps/MapComponent";
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 // Predefined worldwide cities to show on the map for climate intelligence
 const PRESET_CITIES = [
@@ -108,12 +122,57 @@ async function fetchMarkerData(
 export default function RiskMapsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const { city: contextCity, latitude, longitude, setLocation } = useLocation();
+  const { shelters, resources, loading: resourceShelterLoading } = useResourceShelters();
   const [center, setCenter] = useState<[number, number]>([latitude, longitude]);
   const [highlightedMarker, setHighlightedMarker] = useState<string | null>(null);
   const [markers, setMarkers] = useState<RiskMarkerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const nearestShelter = useMemo(() => {
+    if (!shelters || shelters.length === 0) return null;
+    let nearest: Shelter | null = null;
+    let minDistance = Infinity;
+    for (const s of shelters) {
+      const dist = calculateDistance(latitude, longitude, s.latitude, s.longitude);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = s;
+      }
+    }
+    return nearest ? { shelter: nearest as Shelter, distance: minDistance } : null;
+  }, [shelters, latitude, longitude]);
+
+  const nearestAmbulance = useMemo(() => {
+    const ambulances = resources.filter(r => r.type === "Ambulance");
+    if (ambulances.length === 0) return null;
+    let nearest: Resource | null = null;
+    let minDistance = Infinity;
+    for (const a of ambulances) {
+      const dist = calculateDistance(latitude, longitude, a.latitude, a.longitude);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = a;
+      }
+    }
+    return nearest ? { ambulance: nearest as Resource, distance: minDistance } : null;
+  }, [resources, latitude, longitude]);
+
+  const nearestRescueTeam = useMemo(() => {
+    const rescueTeams = resources.filter(r => r.type === "Rescue Team");
+    if (rescueTeams.length === 0) return null;
+    let nearest: Resource | null = null;
+    let minDistance = Infinity;
+    for (const rt of rescueTeams) {
+      const dist = calculateDistance(latitude, longitude, rt.latitude, rt.longitude);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = rt;
+      }
+    }
+    return nearest ? { rescueTeam: nearest as Resource, distance: minDistance } : null;
+  }, [resources, latitude, longitude]);
   
   const [activeLayers, setActiveLayers] = useState<MapActiveLayers>({
     weather: true,
@@ -499,6 +558,67 @@ export default function RiskMapsPage() {
               </div>
             </div>
           </div>
+
+          {/* Nearest Emergency Services Panel */}
+          {!resourceShelterLoading && (
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm shrink-0 space-y-3">
+              <h3 className="font-bold text-gray-900 text-sm border-b pb-2 flex items-center gap-1.5">
+                <ShieldAlert className="h-4 w-4 text-primary-500" />
+                Nearest Emergency Services
+              </h3>
+              <div className="space-y-3 text-xs">
+                {/* Nearest Shelter */}
+                {nearestShelter ? (
+                  <div className="space-y-1">
+                    <p className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Nearest Shelter</p>
+                    <p className="font-bold text-gray-800 truncate">{nearestShelter.shelter.name}</p>
+                    <div className="flex justify-between text-gray-500 text-[10px]">
+                      <span>{nearestShelter.distance.toFixed(1)} km away</span>
+                      <span className={nearestShelter.shelter.status === "Available" ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
+                        {nearestShelter.shelter.capacity - nearestShelter.shelter.occupied} spaces left
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-400">No shelters available</p>
+                )}
+
+                {/* Nearest Ambulance */}
+                {nearestAmbulance ? (
+                  <div className="space-y-1 border-t pt-2 border-gray-100">
+                    <p className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Nearest Ambulance</p>
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-800">{nearestAmbulance.distance.toFixed(1)} km away</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                        nearestAmbulance.ambulance.status === "Available" ? "bg-green-50 text-green-700 border-green-200" :
+                        nearestAmbulance.ambulance.status === "En Route" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        "bg-orange-50 text-orange-700 border-orange-200"
+                      }`}>{nearestAmbulance.ambulance.status}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 border-t pt-2 border-gray-100">No ambulances nearby</p>
+                )}
+
+                {/* Nearest Rescue Team */}
+                {nearestRescueTeam ? (
+                  <div className="space-y-1 border-t pt-2 border-gray-100">
+                    <p className="font-bold text-gray-500 uppercase text-[9px] tracking-wider">Nearest Rescue Team</p>
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-800">{nearestRescueTeam.distance.toFixed(1)} km away</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                        nearestRescueTeam.rescueTeam.status === "Available" ? "bg-green-50 text-green-700 border-green-200" :
+                        nearestRescueTeam.rescueTeam.status === "En Route" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        "bg-orange-50 text-orange-700 border-orange-200"
+                      }`}>{nearestRescueTeam.rescueTeam.status}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 border-t pt-2 border-gray-100">No rescue teams nearby</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Map Container Area */}
@@ -514,6 +634,8 @@ export default function RiskMapsPage() {
             center={center} 
             markers={markers} 
             incidents={incidents}
+            shelters={shelters}
+            resources={resources}
             activeLayers={activeLayers} 
             highlightedMarker={highlightedMarker}
             onMapClick={handleMapClick}

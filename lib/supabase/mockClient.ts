@@ -136,43 +136,130 @@ class MockQueryBuilder {
           {
             id: "ALRT-1001",
             title: "Flash Flood Warning",
-            description: JSON.stringify({
-              description: "High risk of flash flooding in low-lying areas of Velachery. Avoid travel and secure essential assets.",
-              category: "Flood Risk",
-              recommendedActions: [
-                "Move essential items and electronics to higher floors.",
-                "Avoid driving through flooded roads.",
-                "Locate the nearest designated concrete shelter."
-              ],
-              emergencyContacts: [
-                { name: "Rescue Services", number: "112" },
-                { name: "Local Corporation Zone", number: "044-2220-0335" }
-              ]
-            }),
-            severity: "Critical",
+            message: "High risk of flash flooding in low-lying areas of Velachery. Avoid travel and secure essential assets.",
+            severity: "critical",
             location: "Velachery",
-            status: "Active",
+            status: "active",
             created_at: new Date(Date.now() - 3600000).toISOString()
           },
           {
             id: "ALRT-1002",
             title: "Extreme Heat Alert",
-            description: JSON.stringify({
-              description: "Severe heatwave conditions expected. Temperatures to exceed 42°C in T Nagar.",
-              category: "Heatwave",
-              recommendedActions: [
-                "Stay indoors during peak heat hours (12 PM - 4 PM).",
-                "Stay hydrated and avoid strenuous outdoor activities."
-              ],
-              emergencyContacts: [
-                { name: "Disaster Helpline", number: "1070" },
-                { name: "Medical Emergency", number: "108" }
-              ]
-            }),
-            severity: "High",
+            message: "Severe heatwave conditions expected. Temperatures to exceed 42°C in T Nagar.",
+            severity: "high",
             location: "T Nagar",
-            status: "Active",
+            status: "active",
             created_at: new Date(Date.now() - 3600000 * 3).toISOString()
+          }
+        ];
+      } else if (this.tableName === 'shelters') {
+        initialData = [
+          {
+            id: "sh-1",
+            name: "Chennai Community Shelter",
+            address: "Velachery Main Rd",
+            latitude: 12.9790,
+            longitude: 80.2210,
+            capacity: 500,
+            occupied: 320,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+          },
+          {
+            id: "sh-2",
+            name: "Trichy Relief Center",
+            address: "Cantonment, Trichy",
+            latitude: 10.8050,
+            longitude: 78.6856,
+            capacity: 300,
+            occupied: 150,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 10).toISOString()
+          },
+          {
+            id: "sh-3",
+            name: "Kallakurichi Government Shelter",
+            address: "Kachirapalayam Rd",
+            latitude: 11.7380,
+            longitude: 78.9620,
+            capacity: 250,
+            occupied: 250,
+            status: "Full",
+            created_at: new Date(Date.now() - 3600000 * 20).toISOString()
+          },
+          {
+            id: "sh-4",
+            name: "Tambaram Emergency Hall",
+            address: "Tambaram West",
+            latitude: 12.9260,
+            longitude: 80.1000,
+            capacity: 400,
+            occupied: 0,
+            status: "Maintenance",
+            created_at: new Date(Date.now() - 3600000 * 30).toISOString()
+          }
+        ];
+      } else if (this.tableName === 'resources') {
+        initialData = [
+          {
+            id: "res-1",
+            name: "Ambulance Unit 1",
+            type: "Ambulance",
+            location: "Velachery Hospital",
+            latitude: 12.9780,
+            longitude: 80.2230,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+          },
+          {
+            id: "res-2",
+            name: "Ambulance Unit 2",
+            type: "Ambulance",
+            location: "Guindy Depot",
+            latitude: 13.0067,
+            longitude: 80.2206,
+            status: "En Route",
+            created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+          },
+          {
+            id: "res-3",
+            name: "Rescue Team Alpha",
+            type: "Rescue Team",
+            location: "Adyar Flyover",
+            latitude: 13.0012,
+            longitude: 80.2565,
+            status: "Deployed",
+            created_at: new Date(Date.now() - 3600000 * 12).toISOString()
+          },
+          {
+            id: "res-4",
+            name: "Rescue Team Bravo",
+            type: "Rescue Team",
+            location: "Tambaram Station",
+            latitude: 12.9230,
+            longitude: 80.1100,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 18).toISOString()
+          },
+          {
+            id: "res-5",
+            name: "Water Tanker W-01",
+            type: "Water Tanker",
+            location: "Central Depot",
+            latitude: 13.0827,
+            longitude: 80.2707,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 24).toISOString()
+          },
+          {
+            id: "res-6",
+            name: "Fire Response Unit",
+            type: "Fire Unit",
+            location: "Anna Nagar",
+            latitude: 13.0850,
+            longitude: 80.2100,
+            status: "Available",
+            created_at: new Date(Date.now() - 3600000 * 36).toISOString()
           }
         ];
       } else if (this.tableName === 'profiles') {
@@ -446,7 +533,11 @@ export const mockSupabaseClient = {
     let unsub: any = null;
     return {
       on(type: string, filter: any, callback: Function) {
-        const eventName = channelName.includes('alerts') ? 'alerts_changes' : 'incidents_changes';
+        let eventName = 'incidents_changes';
+        if (channelName.includes('alerts')) eventName = 'alerts_changes';
+        else if (channelName.includes('shelters')) eventName = 'shelters_changes';
+        else if (channelName.includes('resources')) eventName = 'resources_changes';
+        
         unsub = emitter.on(eventName, (payload: any) => {
           callback(payload);
         });

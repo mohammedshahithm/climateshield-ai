@@ -108,7 +108,8 @@ function inferEmergencyContacts(title: string): { name: string; number: string }
 interface DbAlert {
   id: string;
   title: string;
-  description: string;
+  message?: string;
+  description?: string;
   severity: string;
   location: string | null;
   status: string;
@@ -122,32 +123,52 @@ interface RealtimePayload {
 }
 
 function deserializeAlert(dbAlert: DbAlert): ClimateAlert {
-  const severity = (dbAlert.severity || "Moderate") as Severity;
-  const status = (dbAlert.status || "Active") as AlertStatus;
+  // Map severity (DB -> UI)
+  let severity: Severity = "Moderate";
+  const dbSeverity = (dbAlert.severity || "").toLowerCase();
+  if (dbSeverity === "critical") severity = "Critical";
+  else if (dbSeverity === "high") severity = "High";
+  else if (dbSeverity === "medium" || dbSeverity === "moderate") severity = "Moderate";
+  else if (dbSeverity === "low") severity = "Low";
+  else {
+    severity = dbAlert.severity as Severity;
+  }
+
+  // Map status (DB -> UI)
+  let status: AlertStatus = "Active";
+  const dbStatus = (dbAlert.status || "").toLowerCase();
+  if (dbStatus === "active") status = "Active";
+  else if (dbStatus === "expired" || dbStatus === "resolved") status = "Resolved";
+  else {
+    status = dbAlert.status as AlertStatus;
+  }
+
   const area = dbAlert.location || "Unknown Area";
   const timestamp = formatRelativeTime(dbAlert.created_at);
 
-  let description = dbAlert.description;
+  let rawMessage = dbAlert.message || dbAlert.description || "";
+  let description = rawMessage;
   let category: AlertCategory = "Flood Risk";
   let recommendedActions: string[] = [];
   let emergencyContacts: { name: string; number: string }[] = [];
 
-  if (dbAlert.description && dbAlert.description.trim().startsWith('{')) {
+  // Support legacy JSON serialized descriptions (if any exist)
+  if (rawMessage.trim().startsWith('{')) {
     try {
-      const parsed = JSON.parse(dbAlert.description);
-      description = parsed.description || dbAlert.description;
+      const parsed = JSON.parse(rawMessage);
+      description = parsed.description || rawMessage;
       category = parsed.category || inferCategory(dbAlert.title, description);
       recommendedActions = parsed.recommendedActions || [];
       emergencyContacts = parsed.emergencyContacts || [];
     } catch (e) {
       console.warn("Failed to parse serialized description JSON:", e);
-      category = inferCategory(dbAlert.title, dbAlert.description);
-      recommendedActions = inferRecommendedActions(dbAlert.title, dbAlert.description);
+      category = inferCategory(dbAlert.title, rawMessage);
+      recommendedActions = inferRecommendedActions(dbAlert.title, rawMessage);
       emergencyContacts = inferEmergencyContacts(dbAlert.title);
     }
   } else {
-    category = inferCategory(dbAlert.title, dbAlert.description);
-    recommendedActions = inferRecommendedActions(dbAlert.title, dbAlert.description);
+    category = inferCategory(dbAlert.title, rawMessage);
+    recommendedActions = inferRecommendedActions(dbAlert.title, rawMessage);
     emergencyContacts = inferEmergencyContacts(dbAlert.title);
   }
 
@@ -288,21 +309,17 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   };
 
   const addAlert = async (newAlert: ClimateAlert) => {
-    const serializedDescription = JSON.stringify({
-      description: newAlert.description,
-      category: newAlert.category,
-      recommendedActions: newAlert.recommendedActions,
-      emergencyContacts: newAlert.emergencyContacts
-    });
+    const dbSeverity = newAlert.severity === "Moderate" ? "medium" : newAlert.severity.toLowerCase();
+    const dbStatus = newAlert.status === "Active" ? "active" : "expired";
 
     const { error: insertError } = await supabase
       .from("alerts")
       .insert({
         title: newAlert.title,
-        description: serializedDescription,
-        severity: newAlert.severity,
+        message: newAlert.description,
+        severity: dbSeverity,
         location: newAlert.area,
-        status: newAlert.status
+        status: dbStatus
       });
 
     if (insertError) {
@@ -312,21 +329,17 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   };
 
   const updateAlert = async (updatedAlert: ClimateAlert) => {
-    const serializedDescription = JSON.stringify({
-      description: updatedAlert.description,
-      category: updatedAlert.category,
-      recommendedActions: updatedAlert.recommendedActions,
-      emergencyContacts: updatedAlert.emergencyContacts
-    });
+    const dbSeverity = updatedAlert.severity === "Moderate" ? "medium" : updatedAlert.severity.toLowerCase();
+    const dbStatus = updatedAlert.status === "Active" ? "active" : "expired";
 
     const { error: updateError } = await supabase
       .from("alerts")
       .update({
         title: updatedAlert.title,
-        description: serializedDescription,
-        severity: updatedAlert.severity,
+        message: updatedAlert.description,
+        severity: dbSeverity,
         location: updatedAlert.area,
-        status: updatedAlert.status
+        status: dbStatus
       })
       .eq("id", updatedAlert.id);
 

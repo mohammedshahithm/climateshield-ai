@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/providers/AuthProvider";
 import { LocationProvider } from "@/providers/LocationContext";
+import { ResourceShelterProvider } from "@/lib/ResourceShelterContext";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -33,8 +34,10 @@ export default function RootLayout({
           <AuthProvider>
             <LocationProvider>
               <AlertsProvider>
-                {children}
-                <Toaster position="bottom-right" />
+                <ResourceShelterProvider>
+                  {children}
+                  <Toaster position="bottom-right" />
+                </ResourceShelterProvider>
               </AlertsProvider>
             </LocationProvider>
           </AuthProvider>

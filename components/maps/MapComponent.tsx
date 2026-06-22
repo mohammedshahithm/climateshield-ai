@@ -64,6 +64,67 @@ const shelterIcon = L.divIcon({
   popupAnchor: [0, -10],
 });
 
+const shelterGreenIcon = L.divIcon({
+  className: "shelter-leaflet-icon-green",
+  html: `<div style="background-color: #10b981; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -13],
+});
+
+const resourceAmbulanceIcon = L.divIcon({
+  className: "resource-leaflet-icon-ambulance",
+  html: `<div style="background-color: #3b82f6; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg></div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -13],
+});
+
+const resourceRescueIcon = L.divIcon({
+  className: "resource-leaflet-icon-rescue",
+  html: `<div style="background-color: #f97316; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg></div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -13],
+});
+
+const resourceWaterIcon = L.divIcon({
+  className: "resource-leaflet-icon-water",
+  html: `<div style="background-color: #06b6d4; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-4.3-7-11-7-11S5 10.7 5 15a7 7 0 0 0 7 7z"></path></svg></div>`,
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+  popupAnchor: [0, -13],
+});
+
+const getResourceIcon = (type: string) => {
+  if (type === "Ambulance") return resourceAmbulanceIcon;
+  if (type === "Rescue Team") return resourceRescueIcon;
+  if (type === "Water Tanker") return resourceWaterIcon;
+  
+  const color = type === "Fire Unit" ? "#ef4444" :
+                type === "Medical Team" ? "#8b5cf6" : "#eab308";
+                
+  return L.divIcon({
+    className: `resource-leaflet-icon-${type.toLowerCase().replace(/\s+/g, '-')}`,
+    html: `<div style="background-color: ${color}; width: 26px; height: 26px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -13],
+  });
+};
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 // Custom Icons for Incident Categories
 const incidentIcons: Record<string, L.DivIcon> = {
   "Flood": L.divIcon({
@@ -144,18 +205,59 @@ interface MapComponentProps {
   center: [number, number];
   markers: RiskMarkerData[];
   incidents?: any[];
+  shelters?: any[];
+  resources?: any[];
   activeLayers: MapActiveLayers;
   highlightedMarker: string | null;
   onMapClick: (lat: number, lng: number) => void;
 }
 
-export default function MapComponent({ center, markers, incidents, activeLayers, highlightedMarker, onMapClick }: MapComponentProps) {
+export default function MapComponent({ center, markers, incidents, shelters, resources, activeLayers, highlightedMarker, onMapClick }: MapComponentProps) {
   const [mounted, setMounted] = useState(false);
   const markerRefs = useRef<{ [key: string]: L.Marker }>({});
   
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const getNearbyAssistanceForShelter = (sLat: number, sLng: number) => {
+    let nearestRes: any = null;
+    let minDistance = Infinity;
+    if (!resources || resources.length === 0) return "No emergency assistance units nearby";
+    resources.forEach(r => {
+      if (r.status !== "Maintenance") {
+        const dist = calculateDistance(sLat, sLng, r.latitude, r.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestRes = r;
+        }
+      }
+    });
+    if (nearestRes) {
+      return `${nearestRes.name} (${nearestRes.type} - ${nearestRes.status}) — ${minDistance.toFixed(1)} km away`;
+    }
+    return "No emergency assistance units nearby";
+  };
+
+  const getNearbyAssistanceForResource = (rLat: number, rLng: number) => {
+    let nearestShelter: any = null;
+    let minDistance = Infinity;
+    if (!shelters || shelters.length === 0) return "No shelters nearby";
+    shelters.forEach(s => {
+      if (s.status !== "Maintenance") {
+        const dist = calculateDistance(rLat, rLng, s.latitude, s.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestShelter = s;
+        }
+      }
+    });
+    if (nearestShelter) {
+      const avail = nearestShelter.capacity - nearestShelter.occupied;
+      return `${nearestShelter.name} (${avail} spaces avail) — ${minDistance.toFixed(1)} km away`;
+    }
+    return "No shelters nearby";
+  };
 
   useEffect(() => {
     if (highlightedMarker && markerRefs.current[highlightedMarker]) {
@@ -346,6 +448,81 @@ export default function MapComponent({ center, markers, incidents, activeLayers,
             </Marker>
           );
         })}
+
+        {/* Render shelters */}
+        {shelters && shelters.map((shelter) => (
+          <Marker 
+            key={shelter.id} 
+            position={[shelter.latitude, shelter.longitude]} 
+            icon={shelterGreenIcon}
+          >
+            <Popup>
+              <div className="min-w-[220px] text-gray-800 font-sans">
+                <div className="flex justify-between items-start gap-2 mb-1.5 border-b pb-1.5 border-gray-100">
+                  <h3 className="font-bold text-emerald-600 text-sm">{shelter.name}</h3>
+                  <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border uppercase shrink-0 ${
+                    shelter.status === 'Available' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                    shelter.status === 'Full' ? 'bg-red-100 text-red-800 border-red-200' :
+                    'bg-yellow-100 text-yellow-800 border-yellow-200'
+                  }`}>{shelter.status}</span>
+                </div>
+                <div className="space-y-1 text-xs mb-2">
+                  <p><span className="text-gray-500 font-medium">Address:</span> <span className="font-bold text-gray-700">{shelter.address}</span></p>
+                  <p><span className="text-gray-500 font-medium">Occupancy:</span> <span className="font-bold text-gray-700">{shelter.occupied} / {shelter.capacity} spaces</span></p>
+                  <p><span className="text-gray-500 font-medium">Available Space:</span> <span className="font-bold text-gray-700">{shelter.capacity - shelter.occupied} spaces</span></p>
+                </div>
+                
+                {/* Capacity Progress Bar */}
+                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden mb-3">
+                  <div 
+                    className={`h-full rounded-full ${
+                      (shelter.occupied / shelter.capacity) > 0.85 ? "bg-red-500" :
+                      (shelter.occupied / shelter.capacity) > 0.60 ? "bg-amber-500" : "bg-emerald-500"
+                    }`}
+                    style={{ width: `${(shelter.occupied / shelter.capacity) * 100}%` }}
+                  />
+                </div>
+
+                <div className="bg-gray-50 p-2 rounded border border-gray-100 text-[10px]">
+                  <span className="block font-bold text-gray-400 uppercase tracking-wider mb-0.5">Nearby Assistance</span>
+                  <p className="font-semibold text-gray-700 leading-tight">{getNearbyAssistanceForShelter(shelter.latitude, shelter.longitude)}</p>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Render resources */}
+        {resources && resources.map((resource) => (
+          <Marker 
+            key={resource.id} 
+            position={[resource.latitude, resource.longitude]} 
+            icon={getResourceIcon(resource.type)}
+          >
+            <Popup>
+              <div className="min-w-[220px] text-gray-800 font-sans">
+                <div className="flex justify-between items-start gap-2 mb-1.5 border-b pb-1.5 border-gray-100">
+                  <h3 className="font-bold text-blue-600 text-sm">{resource.name}</h3>
+                  <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border uppercase shrink-0 ${
+                    resource.status === 'Available' ? 'bg-green-100 text-green-800 border-green-200' :
+                    resource.status === 'En Route' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                    resource.status === 'Deployed' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                    'bg-red-100 text-red-800 border-red-200'
+                  }`}>{resource.status}</span>
+                </div>
+                <div className="space-y-1 text-xs mb-3">
+                  <p><span className="text-gray-500 font-medium">Type:</span> <span className="font-bold text-gray-700">{resource.type}</span></p>
+                  <p><span className="text-gray-500 font-medium">Location:</span> <span className="font-bold text-gray-700">{resource.location}</span></p>
+                </div>
+
+                <div className="bg-gray-50 p-2 rounded border border-gray-100 text-[10px]">
+                  <span className="block font-bold text-gray-400 uppercase tracking-wider mb-0.5">Nearest Shelter</span>
+                  <p className="font-semibold text-gray-700 leading-tight">{getNearbyAssistanceForResource(resource.latitude, resource.longitude)}</p>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );

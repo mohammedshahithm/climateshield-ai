@@ -6,10 +6,11 @@ import {
   MapPin, 
   ActivitySquare, CloudRain, Wind, ThermometerSun,
   Droplets, ArrowRight, Siren, PhoneCall, Sun, FileX, CloudLightning,
-  Cloud, CloudSnow
+  Cloud, CloudSnow, Home, Ambulance, Droplet
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import { AlertCategory, Severity } from "@/lib/mockAlerts";
+import { useResourceShelters } from "@/lib/ResourceShelterContext";
 import { X, Upload, CheckCircle2, ShieldAlert } from "lucide-react";
 import toast from "react-hot-toast";
 import { useWeather } from "@/hooks/useWeather";
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
   
   const { alerts, location, loading: alertsLoading } = useAlerts();
+  const { shelters, resources, loading: resourceShelterLoading } = useResourceShelters();
   const { latitude, longitude } = useLocation();
   const { weather, loading: isWeatherLoading, error: weatherError, refresh: refreshWeather } = useWeather(latitude, longitude);
   const { airQuality, loading: isAqiLoading, error: aqiError, refresh: refreshAqi } = useAirQuality(
@@ -43,8 +45,19 @@ export default function DashboardPage() {
     longitude
   );
 
+  const totalShelters = shelters.length;
+  const availableShelters = shelters.filter(s => s.status === "Available").length;
+  const totalCapacity = shelters.reduce((acc, s) => acc + s.capacity, 0);
+  const occupiedCapacity = shelters.reduce((acc, s) => acc + s.occupied, 0);
+
+  const ambulancesAvailable = resources.filter(r => r.type === "Ambulance" && r.status === "Available").length;
+  const rescueTeamsActive = resources.filter(r => r.type === "Rescue Team" && r.status === "Deployed").length;
+  const waterTankersAvailable = resources.filter(r => r.type === "Water Tanker" && r.status === "Available").length;
+  const emergencyUnitsDeployed = resources.filter(r => r.status === "Deployed").length;
+
   // Top 3 active alerts for the dashboard widget
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
+  const activeAlertsCount = alerts.filter(a => a.status === "Active").length;
 
   // Heat Wave status and logic based on today's maximum temperature
   const todayMaxTemp = weather?.todayMaxTemp;
@@ -143,6 +156,31 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Emergency Warning Banner */}
+      {!alertsLoading && activeAlertsCount > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center justify-between shadow-lg border-l-4 border-l-red-600 animate-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 text-red-600 rounded-xl animate-bounce">
+              <Siren className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-bold text-red-900 text-sm">
+                Emergency Alert: {activeAlertsCount} Active Warning{activeAlertsCount > 1 ? 's' : ''} in your region
+              </p>
+              <p className="text-red-700 text-xs mt-0.5 font-medium">
+                Please review warning details and follow emergency instructions immediately.
+              </p>
+            </div>
+          </div>
+          <Link 
+            href="/dashboard/alerts" 
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer shrink-0"
+          >
+            View Warnings
+          </Link>
+        </div>
+      )}
+
       {/* Weather Widget */}
       {isWeatherLoading ? (
         <div className="bg-gradient-to-r from-secondary-900 to-secondary-800 rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden flex items-center justify-between animate-pulse">
@@ -214,7 +252,46 @@ export default function DashboardPage() {
       )}
 
       {/* Risk Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        {/* Active Alerts Card */}
+        {alertsLoading ? (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:-translate-y-1 transition-all duration-300 animate-pulse h-[180px] justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="h-10 w-10 bg-gray-200 rounded-lg"></div>
+                <div className="h-5 w-16 bg-gray-200 rounded-full"></div>
+              </div>
+              <div className="h-4 w-24 bg-gray-200 rounded mb-2"></div>
+              <div className="h-8 w-16 bg-gray-200 rounded"></div>
+            </div>
+          </div>
+        ) : (
+          <Link href="/dashboard/alerts" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-red-200 hover:-translate-y-1 transition-all duration-300 group justify-between cursor-pointer">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className={`p-2 rounded-lg transition-all duration-300 ${
+                  activeAlertsCount > 0 
+                    ? "bg-red-50 text-red-600 group-hover:bg-red-100 group-hover:scale-110" 
+                    : "bg-green-50 text-green-600 group-hover:bg-green-100 group-hover:scale-110"
+                }`}>
+                  <Siren className="h-6 w-6" />
+                </div>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  activeAlertsCount > 0 ? "bg-red-100 text-red-800 animate-pulse" : "bg-green-100 text-green-800"
+                }`}>
+                  {activeAlertsCount > 0 ? "Active Warnings" : "No Warnings"}
+                </span>
+              </div>
+              <h3 className="text-gray-500 text-sm font-medium">Active Alerts</h3>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{activeAlertsCount}</p>
+            </div>
+            <div className="mt-4 text-xs text-gray-600 flex items-center gap-1 group-hover:text-primary-600 transition-colors">
+              <span>View alert details</span>
+              <ArrowRight className="h-3 w-3 animate-none group-hover:translate-x-1 transition-transform" />
+            </div>
+          </Link>
+        )}
+
         {isFloodLoading ? (
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md hover:border-blue-200 hover:-translate-y-1 transition-all duration-300 cursor-default group justify-between animate-pulse">
             <div>
@@ -438,6 +515,93 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Resource & Shelter Telemetry */}
+      {!resourceShelterLoading && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <ActivitySquare className="h-5 w-5 text-primary-500" />
+              Resource & Shelter Telemetry
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">Real-time status of emergency shelters and disaster response assets.</p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Shelter Metrics Card */}
+            <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/30 space-y-4">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Home className="h-4 w-4 text-emerald-500" />
+                Shelter Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-gray-900 leading-none">{totalShelters}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Total Shelters</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-emerald-600 leading-none">{availableShelters}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Available Shelters</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-blue-600 leading-none">{totalCapacity}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Total Capacity</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-purple-600 leading-none">{occupiedCapacity}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Occupied Capacity</p>
+                </div>
+              </div>
+              
+              {/* Capacity Utilization Progress Bar */}
+              {totalCapacity > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <div className="flex justify-between text-xs font-bold text-gray-700">
+                    <span>Capacity Utilization</span>
+                    <span>{Math.round((occupiedCapacity / totalCapacity) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200/70 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        (occupiedCapacity / totalCapacity) > 0.85 ? "bg-red-500" :
+                        (occupiedCapacity / totalCapacity) > 0.60 ? "bg-amber-500" : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${Math.min(100, (occupiedCapacity / totalCapacity) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-medium">Available space: {totalCapacity - occupiedCapacity} spaces remaining across all active shelters.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Resource Metrics Card */}
+            <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/30 space-y-4">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Ambulance className="h-4 w-4 text-blue-500" />
+                Resource Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-blue-600 leading-none">{ambulancesAvailable}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Ambulances Available</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-orange-600 leading-none">{rescueTeamsActive}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Rescue Teams Active</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-teal-600 leading-none">{waterTankersAvailable}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Water Tankers Available</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-gray-100">
+                  <p className="text-2xl font-black text-red-600 leading-none">{emergencyUnitsDeployed}</p>
+                  <p className="text-xs font-semibold text-gray-500 mt-2">Emergency Units Deployed</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report Incident Modal */}
       {isReportModalOpen && (

@@ -7,10 +7,11 @@ import {
   AlertTriangle, ShieldAlert, ActivitySquare, Users, 
   MapPin, PlusCircle, Trash2, Edit3, CheckCircle2,
   Clock, BarChart3, X, CheckSquare, Square, Loader2,
-  FileText, Send, Ambulance, Home, Droplet
+  FileText, Send, Ambulance, Home, Droplet, Flame, Shield
 } from "lucide-react";
 import type { AdminMarker } from "@/components/maps/AdminMapComponent";
 import { useAlerts } from "@/lib/AlertsContext";
+import { useResourceShelters, Shelter, Resource as DbResource, ResourceType, ResourceStatus } from "@/lib/ResourceShelterContext";
 import { ClimateAlert, Severity, AlertCategory, AlertStatus } from "@/lib/mockAlerts";
 import { useLocation, PREDEFINED_CITIES } from "@/providers/LocationContext";
 import { createClient } from "@/lib/supabase/client";
@@ -41,37 +42,30 @@ interface Incident {
   created_at: string;
 }
 
-type Resource = {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-  location?: string;
-  capacity?: string;
-};
-
-const initialResources: Resource[] = [
-  { id: "res1", name: "Rescue Squad Alpha", type: "Rescue Team", status: "Deployed", location: "Velachery" },
-  { id: "res2", name: "Ambulance Unit 4", type: "Ambulance", status: "En Route", location: "Guindy" },
-  { id: "res3", name: "Velachery Shelter", type: "Shelter", status: "Available", capacity: "140/500" },
-  { id: "res4", name: "Water Tanker W-01", type: "Water Unit", status: "Standby", location: "Central Depot" },
-  { id: "res5", name: "Rescue Squad Beta", type: "Rescue Team", status: "Standby", location: "Tambaram HQ" },
-];
-
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { userRole, alerts, addAlert, updateAlert, deleteAlert, showToast } = useAlerts();
+  const { 
+    shelters, 
+    resources, 
+    addShelter, 
+    updateShelter, 
+    deleteShelter, 
+    addResource, 
+    updateResource, 
+    deleteResource 
+  } = useResourceShelters();
   const { latitude, longitude } = useLocation();
   const supabase = createClient();
 
   // State
+  const [activeTab, setActiveTab] = useState<"command" | "resources">("command");
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [citizensCount, setCitizensCount] = useState<number | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [riskZones, setRiskZones] = useState<{ name: string; score: number; level: string; color: string }[]>([]);
   const [riskZonesLoading, setRiskZonesLoading] = useState(true);
-  const [resources, setResources] = useState<Resource[]>(initialResources);
 
   // Modals & Selections
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
@@ -80,6 +74,16 @@ export default function AdminDashboardPage() {
   const [selectedAlertForDelete, setSelectedAlertForDelete] = useState<ClimateAlert | null>(null);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Shelters Modals
+  const [isCreateShelterOpen, setIsCreateShelterOpen] = useState(false);
+  const [selectedShelterForEdit, setSelectedShelterForEdit] = useState<Shelter | null>(null);
+  const [selectedShelterForDelete, setSelectedShelterForDelete] = useState<Shelter | null>(null);
+
+  // Resources Modals
+  const [isCreateResourceOpen, setIsCreateResourceOpen] = useState(false);
+  const [selectedResourceForEdit, setSelectedResourceForEdit] = useState<DbResource | null>(null);
+  const [selectedResourceForDelete, setSelectedResourceForDelete] = useState<DbResource | null>(null);
 
   // Filters State
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -327,13 +331,21 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleDeployResource = (deploymentData: { unit: string; location: string; incident: string; priority: string; }) => {
-    setResources(prev => prev.map(res => {
-      if (res.name === deploymentData.unit) {
-        return { ...res, status: "En Route", location: deploymentData.location };
+  const handleDeployResource = async (deploymentData: { unit: string; location: string; incident: string; priority: string; }) => {
+    const matchedRes = resources.find(r => r.name === deploymentData.unit);
+    if (matchedRes) {
+      try {
+        await updateResource({
+          ...matchedRes,
+          status: "En Route",
+          location: deploymentData.location
+        });
+        showToast("Tactical unit successfully dispatched.", "success");
+      } catch (err) {
+        console.error("Failed to deploy resource:", err);
+        showToast("Failed to dispatch resource.", "error");
       }
-      return res;
-    }));
+    }
     
     if (deploymentData.incident) {
       const matched = incidents.find(inc => inc.title === deploymentData.incident);
@@ -342,8 +354,51 @@ export default function AdminDashboardPage() {
       }
     }
 
-    showToast("Tactical unit successfully dispatched.", "success");
     setIsDeployModalOpen(false);
+  };
+
+  const handleQuickOccupancyChange = async (shelter: Shelter, newOccupied: number) => {
+    if (newOccupied < 0 || newOccupied > shelter.capacity) {
+      showToast("Occupancy must be between 0 and shelter capacity.", "error");
+      return;
+    }
+    try {
+      await updateShelter({
+        ...shelter,
+        occupied: newOccupied,
+        status: newOccupied === shelter.capacity ? "Full" : shelter.status === "Full" ? "Available" : shelter.status
+      });
+      showToast("Shelter occupancy updated successfully.", "success");
+    } catch (err) {
+      console.error("Failed to update shelter occupancy:", err);
+      showToast("Failed to update shelter occupancy.", "error");
+    }
+  };
+
+  const handleShelterStatusChange = async (shelter: Shelter, newStatus: "Available" | "Full" | "Maintenance") => {
+    try {
+      await updateShelter({
+        ...shelter,
+        status: newStatus
+      });
+      showToast(`Shelter status changed to ${newStatus}.`, "success");
+    } catch (err) {
+      console.error("Failed to change shelter status:", err);
+      showToast("Failed to change shelter status.", "error");
+    }
+  };
+
+  const handleResourceStatusChange = async (res: DbResource, newStatus: ResourceStatus) => {
+    try {
+      await updateResource({
+        ...res,
+        status: newStatus
+      });
+      showToast(`Resource status changed to ${newStatus}.`, "success");
+    } catch (err) {
+      console.error("Failed to change resource status:", err);
+      showToast("Failed to change resource status.", "error");
+    }
   };
 
   // PDF Report
@@ -458,8 +513,34 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-gray-200 gap-2 mb-4">
+        <button
+          onClick={() => setActiveTab("command")}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === "command"
+              ? "border-red-600 text-red-600 font-extrabold"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          }`}
+        >
+          <ShieldAlert className="h-4 w-4" /> Command Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab("resources")}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === "resources"
+              ? "border-red-600 text-red-600 font-extrabold"
+              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+          }`}
+        >
+          <ActivitySquare className="h-4 w-4" /> Resource & Shelter Management
+        </button>
+      </div>
+
+      {activeTab === "command" ? (
+        <>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div>
           <div className="flex-1">
@@ -859,17 +940,18 @@ export default function AdminDashboardPage() {
                     <div className={`p-2 rounded-lg ${
                       res.type === "Rescue Team" ? "bg-purple-100 text-purple-600" :
                       res.type === "Ambulance" ? "bg-orange-100 text-orange-600" :
-                      res.type === "Water Unit" ? "bg-blue-100 text-blue-600" :
+                      res.type === "Water Tanker" ? "bg-blue-100 text-blue-600" :
                       "bg-green-100 text-green-600"
                     }`}>
                       {res.type === "Rescue Team" && <ActivitySquare className="h-4 w-4" />}
                       {res.type === "Ambulance" && <Ambulance className="h-4 w-4" />}
-                      {res.type === "Water Unit" && <Droplet className="h-4 w-4" />}
-                      {res.type === "Shelter" && <Home className="h-4 w-4" />}
+                      {res.type === "Water Tanker" && <Droplet className="h-4 w-4" />}
+                      {res.type === "Fire Unit" && <Flame className="h-4 w-4" />}
+                      {res.type === "Medical Team" && <Shield className="h-4 w-4" />}
                     </div>
                     <div>
                       <p className="font-bold text-gray-900">{res.name}</p>
-                      <p className="text-gray-400 text-[10px] mt-0.5">{res.location || res.capacity}</p>
+                      <p className="text-gray-400 text-[10px] mt-0.5">{res.location}</p>
                     </div>
                   </div>
                   <div>
@@ -886,6 +968,229 @@ export default function AdminDashboardPage() {
         </div>
 
       </div>
+        </>
+      ) : (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Shelter Management Panel */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                  <Home className="h-4 w-4 text-emerald-600" />
+                  Shelter Management Panel
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Configure emergency shelters, occupancy limits, and active statuses.</p>
+              </div>
+              <button
+                onClick={() => setIsCreateShelterOpen(true)}
+                className="px-3.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <PlusCircle className="h-3.5 w-3.5" /> Add Shelter
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              {shelters.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">
+                  <Home className="h-10 w-10 mx-auto mb-3 opacity-40 text-gray-300" />
+                  <p className="font-semibold text-sm">No Shelters Logged</p>
+                  <p className="text-xs text-gray-400 mt-1">Add a shelter above to begin resource telemetry.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <th className="px-6 py-3.5">Shelter Name</th>
+                      <th className="px-6 py-3.5">Address</th>
+                      <th className="px-6 py-3.5">Capacity / Occupancy</th>
+                      <th className="px-6 py-3.5">Utilization</th>
+                      <th className="px-6 py-3.5">Status</th>
+                      <th className="px-6 py-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs">
+                    {shelters.map(shelter => {
+                      const utilPercent = Math.min(100, Math.round((shelter.occupied / shelter.capacity) * 100));
+                      const available = shelter.capacity - shelter.occupied;
+                      return (
+                        <tr key={shelter.id} className="hover:bg-gray-50/50 transition-colors">
+                          <td className="px-6 py-4 font-bold text-gray-900">
+                            {shelter.name}
+                          </td>
+                          <td className="px-6 py-4 text-gray-500 max-w-[200px] truncate">
+                            <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-gray-400" /> {shelter.address}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-700">Occupied:</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleQuickOccupancyChange(shelter, shelter.occupied - 1)}
+                                    className="px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded font-black text-gray-700 disabled:opacity-40 cursor-pointer"
+                                    disabled={shelter.occupied <= 0}
+                                  >
+                                    -
+                                  </button>
+                                  <span className="font-extrabold text-gray-900 w-8 text-center">{shelter.occupied}</span>
+                                  <button
+                                    onClick={() => handleQuickOccupancyChange(shelter, shelter.occupied + 1)}
+                                    className="px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded font-black text-gray-700 disabled:opacity-40 cursor-pointer"
+                                    disabled={shelter.occupied >= shelter.capacity}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-medium">
+                                Total Limit: {shelter.capacity} | {available} space{available !== 1 ? "s" : ""} free
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="w-36 space-y-1">
+                              <div className="flex justify-between text-[10px] font-bold text-gray-500">
+                                <span>{utilPercent}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    utilPercent > 85 ? "bg-red-500" :
+                                    utilPercent > 60 ? "bg-amber-500" : "bg-emerald-500"
+                                  }`}
+                                  style={{ width: `${utilPercent}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col gap-1.5">
+                              <select
+                                value={shelter.status}
+                                onChange={(e) => handleShelterStatusChange(shelter, e.target.value as any)}
+                                className={`bg-white border border-gray-200 rounded-lg text-xs font-semibold px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:outline-none cursor-pointer ${
+                                  shelter.status === "Available" ? "text-green-700 border-green-200" :
+                                  shelter.status === "Full" ? "text-red-700 border-red-200" :
+                                  "text-yellow-700 border-yellow-200"
+                                }`}
+                              >
+                                <option value="Available">Available</option>
+                                <option value="Full">Full</option>
+                                <option value="Maintenance">Maintenance</option>
+                              </select>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right space-x-1.5">
+                            <button
+                              onClick={() => setSelectedShelterForEdit(shelter)}
+                              className="px-2 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-semibold transition-colors cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => setSelectedShelterForDelete(shelter)}
+                              className="px-2 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded font-semibold transition-colors cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Resource Management Panel */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                  <Ambulance className="h-4 w-4 text-blue-600" />
+                  Resource Management Panel
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">Track emergency unit locations, status profiles, and active dispatch states.</p>
+              </div>
+              <button
+                onClick={() => setIsCreateResourceOpen(true)}
+                className="px-3.5 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <PlusCircle className="h-3.5 w-3.5" /> Add Resource
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              {resources.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">
+                  <Ambulance className="h-10 w-10 mx-auto mb-3 opacity-40 text-gray-300" />
+                  <p className="font-semibold text-sm">No Resources Logged</p>
+                  <p className="text-xs text-gray-400 mt-1">Add a resource above to begin dispatcher telemetry.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50/50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      <th className="px-6 py-3.5">Resource Name</th>
+                      <th className="px-6 py-3.5">Type</th>
+                      <th className="px-6 py-3.5">Current Location</th>
+                      <th className="px-6 py-3.5">Status</th>
+                      <th className="px-6 py-3.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs">
+                    {resources.map(res => (
+                      <tr key={res.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-6 py-4 font-bold text-gray-900">
+                          {res.name}
+                        </td>
+                        <td className="px-6 py-4 text-gray-500 font-semibold">
+                          {res.type}
+                        </td>
+                        <td className="px-6 py-4 text-gray-700">
+                          <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-gray-400" /> {res.location}</span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <select
+                            value={res.status}
+                            onChange={(e) => handleResourceStatusChange(res, e.target.value as ResourceStatus)}
+                            className={`bg-white border border-gray-200 rounded-lg text-xs font-semibold px-2 py-1 focus:ring-1 focus:ring-primary-500 focus:outline-none cursor-pointer ${
+                              res.status === "Available" ? "text-green-700 border-green-200 bg-green-50/30" :
+                              res.status === "En Route" ? "text-blue-700 border-blue-200 bg-blue-50/30" :
+                              res.status === "Deployed" ? "text-orange-700 border-orange-200 bg-orange-50/30" :
+                              "text-red-700 border-red-200 bg-red-50/30"
+                            }`}
+                          >
+                            <option value="Available">Available</option>
+                            <option value="En Route">En Route</option>
+                            <option value="Deployed">Deployed</option>
+                            <option value="Maintenance">Maintenance</option>
+                          </select>
+                        </td>
+                        <td className="px-6 py-4 text-right space-x-1.5">
+                          <button
+                            onClick={() => setSelectedResourceForEdit(res)}
+                            className="px-2 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-semibold transition-colors cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setSelectedResourceForDelete(res)}
+                            className="px-2 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded font-semibold transition-colors cursor-pointer"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Incident Details Modal */}
       {selectedIncident && (
@@ -1046,26 +1351,148 @@ export default function AdminDashboardPage() {
           showToast={showToast}
         />
       )}
+
+      {/* Create Shelter Modal */}
+      {isCreateShelterOpen && (
+        <CreateShelterModal
+          onClose={() => setIsCreateShelterOpen(false)}
+          addShelter={addShelter}
+          showToast={showToast}
+          defaultLat={latitude}
+          defaultLng={longitude}
+        />
+      )}
+
+      {/* Edit Shelter Modal */}
+      {selectedShelterForEdit && (
+        <EditShelterModal
+          shelter={selectedShelterForEdit}
+          onClose={() => setSelectedShelterForEdit(null)}
+          updateShelter={updateShelter}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Delete Shelter Modal */}
+      {selectedShelterForDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="absolute inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={() => setSelectedShelterForDelete(null)}></div>
+          <div className="bg-white rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 text-center mb-2 font-black">Delete Shelter</h3>
+              <p className="text-xs text-gray-500 text-center mb-6 leading-relaxed">
+                Are you sure you want to permanently delete shelter <strong>&quot;{selectedShelterForDelete.name}&quot;</strong>? This action cannot be undone.
+              </p>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setSelectedShelterForDelete(null)} 
+                  className="flex-1 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await deleteShelter(selectedShelterForDelete.id);
+                      showToast("Shelter successfully deleted.", "success");
+                      setSelectedShelterForDelete(null);
+                    } catch (err) {
+                      console.error("Error deleting shelter:", err);
+                      showToast("Failed to delete shelter.", "error");
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 cursor-pointer"
+                >
+                  Delete Shelter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Resource Modal */}
+      {isCreateResourceOpen && (
+        <CreateResourceModal
+          onClose={() => setIsCreateResourceOpen(false)}
+          addResource={addResource}
+          showToast={showToast}
+          defaultLat={latitude}
+          defaultLng={longitude}
+        />
+      )}
+
+      {/* Edit Resource Modal */}
+      {selectedResourceForEdit && (
+        <EditResourceModal
+          resource={selectedResourceForEdit}
+          onClose={() => setSelectedResourceForEdit(null)}
+          updateResource={updateResource}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Delete Resource Modal */}
+      {selectedResourceForDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="absolute inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={() => setSelectedResourceForDelete(null)}></div>
+          <div className="bg-white rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 text-center mb-2 font-black">Delete Resource</h3>
+              <p className="text-xs text-gray-500 text-center mb-6 leading-relaxed">
+                Are you sure you want to permanently delete resource <strong>&quot;{selectedResourceForDelete.name}&quot;</strong>? This action cannot be undone.
+              </p>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setSelectedResourceForDelete(null)} 
+                  className="flex-1 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await deleteResource(selectedResourceForDelete.id);
+                      showToast("Resource successfully deleted.", "success");
+                      setSelectedResourceForDelete(null);
+                    } catch (err) {
+                      console.error("Error deleting resource:", err);
+                      showToast("Failed to delete resource.", "error");
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 cursor-pointer"
+                >
+                  Delete Resource
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => void, addAlert: (alert: ClimateAlert) => Promise<void>, showToast: (msg: string, type: "success" | "error") => void }) {
   const [formData, setFormData] = useState({
-    type: "Flood Risk",
+    title: "",
+    message: "",
     severity: "High",
     location: "",
-    zone: "",
-    description: "",
-    notifyPush: true,
-    notifySms: true,
-    notifyEmail: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.location || !formData.description) {
+    if (!formData.title || !formData.message || !formData.location) {
       showToast("Please fill in all required fields.", "error");
       return;
     }
@@ -1074,14 +1501,14 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
 
     const newAlert: ClimateAlert = {
       id: `ALRT-${Math.floor(1000 + Math.random() * 9000)}`,
-      title: `${formData.severity} ${formData.type} Warning`,
-      category: formData.type as AlertCategory,
+      title: formData.title,
+      category: "Flood Risk", // Auto-inferred dynamically by the context deserializer
       severity: formData.severity as Severity,
       area: formData.location,
       timestamp: "Just Now",
       status: "Active" as const,
-      description: formData.description,
-      recommendedActions: ["Stay alert.", "Follow local authorities."],
+      description: formData.message,
+      recommendedActions: [],
       emergencyContacts: []
     };
 
@@ -1111,23 +1538,19 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
         
         <form onSubmit={handleSubmit} className="text-xs">
           <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Alert Title <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                placeholder="e.g. Flash Flood Warning"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.title}
+                onChange={e => setFormData({...formData, title: e.target.value})}
+                disabled={isSubmitting}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Alert Type</label>
-                <select 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                  value={formData.type}
-                  onChange={e => setFormData({...formData, type: e.target.value})}
-                  disabled={isSubmitting}
-                >
-                  <option value="Flood Risk">Flood</option>
-                  <option value="Heatwave">Heatwave</option>
-                  <option value="Cyclone Warning">Cyclone</option>
-                  <option value="Air Quality">Air Quality</option>
-                  <option value="Infrastructure Failure">Infrastructure</option>
-                  <option value="Heavy Rainfall">Heavy Rainfall</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Severity</label>
                 <select 
@@ -1142,9 +1565,6 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
                   <option value="Critical">Critical</option>
                 </select>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Location <span className="text-red-500">*</span></label>
                 <input 
@@ -1156,58 +1576,19 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
                   disabled={isSubmitting}
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Target Zone</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Zone 13"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                  value={formData.zone}
-                  onChange={e => setFormData({...formData, zone: e.target.value})}
-                  disabled={isSubmitting}
-                />
-              </div>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Description <span className="text-red-500">*</span></label>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Message <span className="text-red-500">*</span></label>
               <textarea 
-                rows={3}
+                rows={4}
                 placeholder="Provide detailed information about the emergency..."
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none resize-none"
-                value={formData.description}
-                onChange={e => setFormData({...formData, description: e.target.value})}
+                value={formData.message}
+                onChange={e => setFormData({...formData, message: e.target.value})}
                 disabled={isSubmitting}
               />
             </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-2">Send Notification</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="text-primary-600 group-hover:text-primary-700">
-                    {formData.notifyPush ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-gray-300" />}
-                  </div>
-                  <input type="checkbox" className="hidden" checked={formData.notifyPush} onChange={() => setFormData({...formData, notifyPush: !formData.notifyPush})} disabled={isSubmitting} />
-                  <span className="text-xs font-semibold text-gray-700">Push App</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="text-primary-600 group-hover:text-primary-700">
-                    {formData.notifySms ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-gray-300" />}
-                  </div>
-                  <input type="checkbox" className="hidden" checked={formData.notifySms} onChange={() => setFormData({...formData, notifySms: !formData.notifySms})} disabled={isSubmitting} />
-                  <span className="text-xs font-semibold text-gray-700">SMS Alert</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="text-primary-600 group-hover:text-primary-700">
-                    {formData.notifyEmail ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5 text-gray-300" />}
-                  </div>
-                  <input type="checkbox" className="hidden" checked={formData.notifyEmail} onChange={() => setFormData({...formData, notifyEmail: !formData.notifyEmail})} disabled={isSubmitting} />
-                  <span className="text-xs font-semibold text-gray-700">Email</span>
-                </label>
-              </div>
-            </div>
-
           </div>
           <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
             <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer">Cancel</button>
@@ -1232,17 +1613,16 @@ function CreateAlertModal({ onClose, addAlert, showToast }: { onClose: () => voi
 function EditAlertModal({ alert, onClose, updateAlert, showToast }: { alert: ClimateAlert, onClose: () => void, updateAlert: (alert: ClimateAlert) => Promise<void>, showToast: (msg: string, type: "success" | "error") => void }) {
   const [formData, setFormData] = useState({
     title: alert.title,
-    type: alert.category,
+    message: alert.description,
     severity: alert.severity,
     location: alert.area,
     status: alert.status,
-    description: alert.description
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title || !formData.location || !formData.description) {
+    if (!formData.title || !formData.location || !formData.message) {
       showToast("Please fill in all required fields.", "error");
       return;
     }
@@ -1253,11 +1633,10 @@ function EditAlertModal({ alert, onClose, updateAlert, showToast }: { alert: Cli
       const updated: ClimateAlert = {
         ...alert,
         title: formData.title,
-        category: formData.type as AlertCategory,
         severity: formData.severity as Severity,
         area: formData.location,
         status: formData.status as AlertStatus,
-        description: formData.description
+        description: formData.message
       };
       await updateAlert(updated);
       showToast("Alert successfully updated.", "success");
@@ -1296,22 +1675,6 @@ function EditAlertModal({ alert, onClose, updateAlert, showToast }: { alert: Cli
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Alert Type</label>
-                <select 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                  value={formData.type}
-                  onChange={e => setFormData({...formData, type: e.target.value as AlertCategory})}
-                  disabled={isSubmitting}
-                >
-                  <option value="Flood Risk">Flood</option>
-                  <option value="Heatwave">Heatwave</option>
-                  <option value="Cyclone Warning">Cyclone</option>
-                  <option value="Air Quality">Air Quality</option>
-                  <option value="Infrastructure Failure">Infrastructure</option>
-                  <option value="Heavy Rainfall">Heavy Rainfall</option>
-                </select>
-              </div>
-              <div>
                 <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Severity</label>
                 <select 
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
@@ -1324,19 +1687,6 @@ function EditAlertModal({ alert, onClose, updateAlert, showToast }: { alert: Cli
                   <option value="High">High</option>
                   <option value="Critical">Critical</option>
                 </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Location <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                  value={formData.location}
-                  onChange={e => setFormData({...formData, location: e.target.value})}
-                  disabled={isSubmitting}
-                />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Status</label>
@@ -1352,13 +1702,26 @@ function EditAlertModal({ alert, onClose, updateAlert, showToast }: { alert: Cli
               </div>
             </div>
 
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Location <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.location}
+                  onChange={e => setFormData({...formData, location: e.target.value})}
+                  disabled={isSubmitting}
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Description <span className="text-red-500">*</span></label>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5">Message <span className="text-red-500">*</span></label>
               <textarea 
-                rows={3}
+                rows={4}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none resize-none"
-                value={formData.description}
-                onChange={e => setFormData({...formData, description: e.target.value})}
+                value={formData.message}
+                onChange={e => setFormData({...formData, message: e.target.value})}
                 disabled={isSubmitting}
               />
             </div>
@@ -1479,6 +1842,684 @@ function DeployResourceModal({ onClose, onDeploy, showToast }: { onClose: () => 
             <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 cursor-pointer">Cancel</button>
             <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-primary-600 rounded-lg hover:bg-primary-700 flex items-center gap-2 shadow-sm cursor-pointer">
               <Send className="h-4 w-4" /> Deploy Resource Unit
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CreateShelterModal({ 
+  onClose, 
+  addShelter, 
+  showToast,
+  defaultLat,
+  defaultLng
+}: { 
+  onClose: () => void, 
+  addShelter: (shelter: Omit<Shelter, "id" | "created_at">) => Promise<void>, 
+  showToast: (msg: string, type: "success" | "error") => void,
+  defaultLat: number,
+  defaultLng: number
+}) {
+  const [formData, setFormData] = useState({
+    name: "",
+    address: "",
+    latitude: defaultLat,
+    longitude: defaultLng,
+    capacity: 100,
+    occupied: 0,
+    status: "Available" as "Available" | "Full" | "Maintenance"
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.address || formData.latitude === undefined || formData.longitude === undefined) {
+      showToast("Please fill in all required fields.", "error");
+      return;
+    }
+    if (formData.capacity <= 0) {
+      showToast("Capacity must be greater than 0.", "error");
+      return;
+    }
+    if (formData.occupied < 0 || formData.occupied > formData.capacity) {
+      showToast("Occupancy must be between 0 and capacity.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addShelter({
+        name: formData.name,
+        address: formData.address,
+        latitude: Number(formData.latitude),
+        longitude: Number(formData.longitude),
+        capacity: Number(formData.capacity),
+        occupied: Number(formData.occupied),
+        status: formData.status
+      });
+      showToast("Shelter successfully created.", "success");
+      onClose();
+    } catch (err) {
+      console.error("Failed to create shelter:", err);
+      showToast("Failed to create shelter.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="fixed inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 font-extrabold">Add New Shelter</h2>
+          <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-gray-600 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="text-xs">
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Shelter Name <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                placeholder="e.g. Chennai Relief Center"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Address <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                placeholder="e.g. 12 Main St, Velachery"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.address}
+                onChange={e => setFormData({...formData, address: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Latitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  placeholder="e.g. 13.0827"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.latitude}
+                  onChange={e => setFormData({...formData, latitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Longitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  placeholder="e.g. 80.2707"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.longitude}
+                  onChange={e => setFormData({...formData, longitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Capacity <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.capacity}
+                  onChange={e => setFormData({...formData, capacity: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  min={1}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Occupied</label>
+                <input 
+                  type="number" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.occupied}
+                  onChange={e => setFormData({...formData, occupied: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  min={0}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Status</label>
+                <select 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.status}
+                  onChange={e => setFormData({...formData, status: e.target.value as any})}
+                  disabled={isSubmitting}
+                >
+                  <option value="Available">Available</option>
+                  <option value="Full">Full</option>
+                  <option value="Maintenance">Maintenance</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer">Cancel</button>
+            <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer">
+              Create Shelter
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditShelterModal({ 
+  shelter,
+  onClose, 
+  updateShelter, 
+  showToast 
+}: { 
+  shelter: Shelter,
+  onClose: () => void, 
+  updateShelter: (shelter: Shelter) => Promise<void>, 
+  showToast: (msg: string, type: "success" | "error") => void 
+}) {
+  const [formData, setFormData] = useState({
+    name: shelter.name,
+    address: shelter.address,
+    latitude: shelter.latitude,
+    longitude: shelter.longitude,
+    capacity: shelter.capacity,
+    occupied: shelter.occupied,
+    status: shelter.status
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.address || formData.latitude === undefined || formData.longitude === undefined) {
+      showToast("Please fill in all required fields.", "error");
+      return;
+    }
+    if (formData.capacity <= 0) {
+      showToast("Capacity must be greater than 0.", "error");
+      return;
+    }
+    if (formData.occupied < 0 || formData.occupied > formData.capacity) {
+      showToast("Occupancy must be between 0 and capacity.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updateShelter({
+        ...shelter,
+        name: formData.name,
+        address: formData.address,
+        latitude: Number(formData.latitude),
+        longitude: Number(formData.longitude),
+        capacity: Number(formData.capacity),
+        occupied: Number(formData.occupied),
+        status: formData.status
+      });
+      showToast("Shelter successfully updated.", "success");
+      onClose();
+    } catch (err) {
+      console.error("Failed to update shelter:", err);
+      showToast("Failed to update shelter.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="fixed inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 font-extrabold">Edit Shelter Details</h2>
+          <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-gray-600 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="text-xs">
+          <div className="p-6 space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Shelter Name <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Address <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.address}
+                onChange={e => setFormData({...formData, address: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Latitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.latitude}
+                  onChange={e => setFormData({...formData, latitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Longitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.longitude}
+                  onChange={e => setFormData({...formData, longitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Capacity <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.capacity}
+                  onChange={e => setFormData({...formData, capacity: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  min={1}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Occupied</label>
+                <input 
+                  type="number" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.occupied}
+                  onChange={e => setFormData({...formData, occupied: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  min={0}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Status</label>
+                <select 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.status}
+                  onChange={e => setFormData({...formData, status: e.target.value as any})}
+                  disabled={isSubmitting}
+                >
+                  <option value="Available">Available</option>
+                  <option value="Full">Full</option>
+                  <option value="Maintenance">Maintenance</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer">Cancel</button>
+            <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer">
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CreateResourceModal({ 
+  onClose, 
+  addResource, 
+  showToast,
+  defaultLat,
+  defaultLng
+}: { 
+  onClose: () => void, 
+  addResource: (resource: Omit<DbResource, "id" | "created_at">) => Promise<void>, 
+  showToast: (msg: string, type: "success" | "error") => void,
+  defaultLat: number,
+  defaultLng: number
+}) {
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "Ambulance" as ResourceType,
+    location: "",
+    latitude: defaultLat,
+    longitude: defaultLng,
+    status: "Available" as ResourceStatus
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.type || !formData.location || formData.latitude === undefined || formData.longitude === undefined) {
+      showToast("Please fill in all required fields.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addResource({
+        name: formData.name,
+        type: formData.type,
+        location: formData.location,
+        latitude: Number(formData.latitude),
+        longitude: Number(formData.longitude),
+        status: formData.status
+      });
+      showToast("Resource successfully created.", "success");
+      onClose();
+    } catch (err) {
+      console.error("Failed to create resource:", err);
+      showToast("Failed to create resource.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="fixed inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 font-extrabold">Add Emergency Resource</h2>
+          <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-gray-600 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="text-xs">
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Resource Name <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Rescue Team Alpha"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Resource Type</label>
+                <select 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.type}
+                  onChange={e => setFormData({...formData, type: e.target.value as ResourceType})}
+                  disabled={isSubmitting}
+                >
+                  <option value="Ambulance">Ambulance</option>
+                  <option value="Rescue Team">Rescue Team</option>
+                  <option value="Water Tanker">Water Tanker</option>
+                  <option value="Fire Unit">Fire Unit</option>
+                  <option value="Medical Team">Medical Team</option>
+                  <option value="Food Supply Unit">Food Supply Unit</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Current Location / Address <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                placeholder="e.g. T-Nagar Depot"
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.location}
+                onChange={e => setFormData({...formData, location: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Latitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.latitude}
+                  onChange={e => setFormData({...formData, latitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Longitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.longitude}
+                  onChange={e => setFormData({...formData, longitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Status</label>
+              <select 
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.status}
+                onChange={e => setFormData({...formData, status: e.target.value as ResourceStatus})}
+                disabled={isSubmitting}
+              >
+                <option value="Available">Available</option>
+                <option value="En Route">En Route</option>
+                <option value="Deployed">Deployed</option>
+                <option value="Maintenance">Maintenance</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer">Cancel</button>
+            <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer">
+              Add Resource
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditResourceModal({ 
+  resource,
+  onClose, 
+  updateResource, 
+  showToast 
+}: { 
+  resource: DbResource,
+  onClose: () => void, 
+  updateResource: (resource: DbResource) => Promise<void>, 
+  showToast: (msg: string, type: "success" | "error") => void 
+}) {
+  const [formData, setFormData] = useState({
+    name: resource.name,
+    type: resource.type,
+    location: resource.location,
+    latitude: resource.latitude,
+    longitude: resource.longitude,
+    status: resource.status
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.type || !formData.location || formData.latitude === undefined || formData.longitude === undefined) {
+      showToast("Please fill in all required fields.", "error");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updateResource({
+        ...resource,
+        name: formData.name,
+        type: formData.type,
+        location: formData.location,
+        latitude: Number(formData.latitude),
+        longitude: Number(formData.longitude),
+        status: formData.status
+      });
+      showToast("Resource successfully updated.", "success");
+      onClose();
+    } catch (err) {
+      console.error("Failed to update resource:", err);
+      showToast("Failed to update resource.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="fixed inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 font-extrabold">Modify Resource</h2>
+          <button onClick={onClose} disabled={isSubmitting} className="text-gray-400 hover:text-gray-600 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="text-xs">
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Resource Name <span className="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.name}
+                  onChange={e => setFormData({...formData, name: e.target.value})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Resource Type</label>
+                <select 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.type}
+                  onChange={e => setFormData({...formData, type: e.target.value as ResourceType})}
+                  disabled={isSubmitting}
+                >
+                  <option value="Ambulance">Ambulance</option>
+                  <option value="Rescue Team">Rescue Team</option>
+                  <option value="Water Tanker">Water Tanker</option>
+                  <option value="Fire Unit">Fire Unit</option>
+                  <option value="Medical Team">Medical Team</option>
+                  <option value="Food Supply Unit">Food Supply Unit</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Current Location / Address <span className="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.location}
+                onChange={e => setFormData({...formData, location: e.target.value})}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Latitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.latitude}
+                  onChange={e => setFormData({...formData, latitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Longitude <span className="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.000001"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  value={formData.longitude}
+                  onChange={e => setFormData({...formData, longitude: Number(e.target.value)})}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1.5 font-bold">Status</label>
+              <select 
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                value={formData.status}
+                onChange={e => setFormData({...formData, status: e.target.value as ResourceStatus})}
+                disabled={isSubmitting}
+              >
+                <option value="Available">Available</option>
+                <option value="En Route">En Route</option>
+                <option value="Deployed">Deployed</option>
+                <option value="Maintenance">Maintenance</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer">Cancel</button>
+            <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 flex items-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer">
+              Save Changes
             </button>
           </div>
         </form>

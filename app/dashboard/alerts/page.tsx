@@ -22,17 +22,18 @@ import { useAlerts } from "@/lib/AlertsContext";
 
 export default function AlertsPage() {
   const { alerts: mockAlerts, loading, error } = useAlerts();
-  const [filter, setFilter] = useState<string>("All Alerts");
+  const [filter, setFilter] = useState<string>("All Active Alerts");
   const [selectedAlert, setSelectedAlert] = useState<ClimateAlert | null>(null);
 
   const filters = [
-    "All Alerts", "Active", "Resolved", "Critical", "High", "Moderate", "Low"
+    "All Active Alerts", "Critical", "High", "Moderate", "Low"
   ];
 
   const filteredAlerts = mockAlerts.filter(alert => {
-    if (filter === "All Alerts") return true;
-    if (filter === "Active") return alert.status === "Active";
-    if (filter === "Resolved") return alert.status === "Resolved";
+    // Only display active alerts
+    if (alert.status !== "Active") return false;
+
+    if (filter === "All Active Alerts") return true;
     if (filter === "Critical") return alert.severity === "Critical";
     if (filter === "High") return alert.severity === "High";
     if (filter === "Moderate") return alert.severity === "Moderate";
@@ -173,7 +174,7 @@ export default function AlertsPage() {
           <h3 className="text-lg font-bold text-gray-900 mb-1">No Alerts Found</h3>
           <p className="text-gray-500">There are no {filter.toLowerCase()} alerts matching your current filter.</p>
           <button 
-            onClick={() => setFilter("All Alerts")}
+            onClick={() => setFilter("All Active Alerts")}
             className="mt-4 text-primary-600 font-medium hover:text-primary-700"
           >
             Clear Filters
