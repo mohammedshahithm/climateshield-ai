@@ -1,3 +1,5 @@
+import { fetchConsolidatedData } from "./weather";
+
 export interface FloodRiskData {
   score: number;
   status: "Low Risk" | "Moderate Risk" | "High Risk" | "Critical Risk";
@@ -38,45 +40,39 @@ export function getFloodRiskDetails(score: number, rainSum: number, weatherCode:
 }
 
 export async function fetchFloodRisk(lat: number, lon: number): Promise<FloodRiskData> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=rain,relative_humidity_2m,weather_code&hourly=rain&timezone=auto`;
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch weather forecast data: ${res.statusText}`);
-  }
-
-  const data = await res.json();
+  const data = await fetchConsolidatedData(lat, lon);
   const current = data.current;
-  const hourly = data.hourly;
+  const forecast = data.forecast;
 
-  if (!current || !hourly || !hourly.rain) {
+  if (!current || !forecast || !forecast.list) {
     throw new Error("Invalid response format from weather forecast API");
   }
 
-  // Sum next 24 hours of rain forecast (in mm)
-  const rain24hSum = hourly.rain.slice(0, 24).reduce((sum: number, val: number) => sum + (val || 0), 0);
+  // Sum next 24 hours of rain forecast (first 8 entries of 3-hourly forecast)
+  const first24h = forecast.list.slice(0, 8);
+  const rain24hSum = first24h.reduce((sum: number, item: any) => sum + (item.rain?.["3h"] || 0), 0);
 
   // 1. Rainfall forecast component (0-50 pts)
   // Scale rain sum: 1mm = 1.5 points, max 50 points (capped at ~33mm)
   const rainPoints = Math.min(rain24hSum * 1.5, 50);
 
   // 2. Humidity component (0-25 pts)
-  const humidity = current.relative_humidity_2m ?? 0;
+  const humidity = current.main.humidity ?? 0;
   const humidityPoints = (humidity / 100) * 25;
 
   // 3. Weather condition component (0-25 pts)
-  const code = current.weather_code ?? 0;
+  const code = current.weather[0]?.id ?? 800;
   let weatherPoints = 0;
-  if ([95, 96, 99].includes(code)) {
+  if (code >= 200 && code < 300) {
     weatherPoints = 25; // Thunderstorms
-  } else if ([65, 82].includes(code)) {
+  } else if ([502, 503, 504, 522].includes(code)) {
     weatherPoints = 20; // Heavy / violent rain
-  } else if ([63, 81].includes(code)) {
+  } else if ([501, 521].includes(code)) {
     weatherPoints = 15; // Moderate rain
-  } else if ([61, 80, 55].includes(code)) {
-    weatherPoints = 10; // Light rain / dense drizzle
-  } else if ([51, 53, 56, 57, 66, 67].includes(code)) {
-    weatherPoints = 5; // Other drizzle/freezing rain
+  } else if ([500, 520].includes(code) || (code >= 300 && code < 400)) {
+    weatherPoints = 10; // Light rain / drizzle
+  } else if (code >= 600 && code < 700) {
+    weatherPoints = 5; // Snow
   }
 
   const rawScore = rainPoints + humidityPoints + weatherPoints;

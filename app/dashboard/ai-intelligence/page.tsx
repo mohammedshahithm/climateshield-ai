@@ -272,6 +272,13 @@ export default function AiIntelligencePage() {
           </div>
           <button 
             onClick={() => {
+              if (typeof window !== "undefined") {
+                Object.keys(sessionStorage).forEach(key => {
+                  if (key.startsWith("weather_cache_")) {
+                    sessionStorage.removeItem(key);
+                  }
+                });
+              }
               refreshWeather();
               refreshAqi();
               refreshFlood();

@@ -1,10 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
 import { ClimateAlert, mockAlerts as initialMockAlerts, Severity, AlertCategory, AlertStatus } from "./mockAlerts";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useLocation, PREDEFINED_CITIES } from "@/providers/LocationContext";
 import { createClient } from "./supabase/client";
+import { fetchWeather } from "./weather";
+import { fetchAirQuality } from "./airQuality";
+import { fetchFloodRisk } from "./floodRisk";
 
 type Role = "admin" | "citizen";
 
@@ -188,12 +191,126 @@ function deserializeAlert(dbAlert: DbAlert): ClimateAlert {
 
 export function AlertsProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<ClimateAlert[]>([]);
+  const [dynamicAlerts, setDynamicAlerts] = useState<ClimateAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRoleState] = useState<Role>("admin"); // Default to admin for testing
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const { city: location, setLocation: setLocationContext } = useLocation();
+  const { city: location, setLocation: setLocationContext, latitude, longitude } = useLocation();
   const supabase = createClient();
+
+  // Dynamically generate alerts based on current weather, air quality, and flood risk
+  useEffect(() => {
+    let active = true;
+    async function generateDynamicAlerts() {
+      if (latitude === undefined || longitude === undefined) return;
+      try {
+        const [weatherData, aqiData, floodData] = await Promise.all([
+          fetchWeather(latitude, longitude),
+          fetchAirQuality(latitude, longitude),
+          fetchFloodRisk(latitude, longitude),
+        ]);
+
+        if (!active) return;
+
+        const newAlerts: ClimateAlert[] = [];
+
+        // 1. Heatwave Alert
+        if (weatherData.temperature >= 90) {
+          const tempC = Math.round(((weatherData.temperature - 32) * 5) / 9);
+          const isCritical = weatherData.temperature >= 104;
+          const isHigh = weatherData.temperature >= 98;
+          newAlerts.push({
+            id: `dyn-heat-${location}`,
+            title: isCritical ? "Extreme Heat Emergency" : isHigh ? "High Temperature Advisory" : "Warm Weather Warning",
+            category: "Heatwave",
+            severity: isCritical ? "Critical" : isHigh ? "High" : "Moderate",
+            area: location,
+            timestamp: "Just Now",
+            status: "Active",
+            description: `Temperatures are expected to reach ${weatherData.temperature}°F (${tempC}°C) in ${location}. Stay hydrated and limit outdoor activity.`,
+            recommendedActions: [
+              "Stay indoors during peak heat hours (12 PM - 4 PM).",
+              "Maintain high hydration using electrolyte fluids.",
+              "Check on elderly neighbors."
+            ],
+            emergencyContacts: [
+              { name: "Medical Emergency", number: "108" },
+              { name: "Health Helpline", number: "104" }
+            ]
+          });
+        }
+
+        // 2. Flood Alert
+        if (floodData.score >= 40) {
+          const isCritical = floodData.score >= 75;
+          const isHigh = floodData.score >= 50;
+          newAlerts.push({
+            id: `dyn-flood-${location}`,
+            title: isCritical ? "Flash Flood Emergency" : isHigh ? "Flood Watch Active" : "Minor Waterlogging Warning",
+            category: "Flood Risk",
+            severity: isCritical ? "Critical" : isHigh ? "High" : "Moderate",
+            area: location,
+            timestamp: "Just Now",
+            status: "Active",
+            description: `Elevated flood risk of ${floodData.score}% calculated for ${location}. ${floodData.reasoning}`,
+            recommendedActions: [
+              "Move essential items and electronics to higher floors.",
+              "Avoid driving or walking through flooded roads.",
+              "Locate the nearest designated concrete shelter."
+            ],
+            emergencyContacts: [
+              { name: "Rescue Services", number: "112" },
+              { name: "Disaster Helpline", number: "1070" }
+            ]
+          });
+        }
+
+        // 3. Air Quality Alert
+        if (aqiData.usAqi >= 100) {
+          const isCritical = aqiData.usAqi >= 200;
+          const isHigh = aqiData.usAqi >= 150;
+          newAlerts.push({
+            id: `dyn-aqi-${location}`,
+            title: isCritical ? "Hazardous Air Quality Emergency" : isHigh ? "Unhealthy Air Quality Warning" : "Moderate Air Pollution Advisory",
+            category: "Air Quality",
+            severity: isCritical ? "Critical" : isHigh ? "High" : "Moderate",
+            area: location,
+            timestamp: "Just Now",
+            status: "Active",
+            description: `US AQI has reached ${aqiData.usAqi} (${aqiData.status}) in ${location}. PM2.5 levels are ${aqiData.pm25} µg/m³.`,
+            recommendedActions: [
+              "Limit prolonged outdoor exertion.",
+              "Keep windows closed to prevent ingress of polluted air.",
+              "Wear N95 masks if outdoors."
+            ],
+            emergencyContacts: [
+              { name: "Health Helpline", number: "104" },
+              { name: "Medical Emergency", number: "108" }
+            ]
+          });
+        }
+
+        setDynamicAlerts(newAlerts);
+      } catch (err) {
+        console.error("Failed to generate dynamic alerts:", err);
+      }
+    }
+
+    generateDynamicAlerts();
+    return () => {
+      active = false;
+    };
+  }, [latitude, longitude, location]);
+
+  const combinedAlerts = useMemo(() => {
+    const filteredDbAlerts = alerts.filter(
+      (a) =>
+        a.area.toLowerCase().includes(location.toLowerCase()) ||
+        location.toLowerCase().includes(a.area.toLowerCase())
+    );
+    return [...dynamicAlerts, ...filteredDbAlerts];
+  }, [alerts, dynamicAlerts, location]);
 
   // Load alerts and listen to realtime updates
   useEffect(() => {
@@ -374,7 +491,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AlertsContext.Provider value={{ alerts, loading, error, addAlert, updateAlert, deleteAlert, userRole, setUserRole, showToast, location, setLocation }}>
+    <AlertsContext.Provider value={{ alerts: combinedAlerts, loading, error, addAlert, updateAlert, deleteAlert, userRole, setUserRole, showToast, location, setLocation }}>
       {children}
       {/* Toast Container */}
       <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2">

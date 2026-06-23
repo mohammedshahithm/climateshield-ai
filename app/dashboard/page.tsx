@@ -59,6 +59,31 @@ export default function DashboardPage() {
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
   const activeAlertsCount = alerts.filter(a => a.status === "Active").length;
 
+  // Calculate dynamic Composite Climate Risk Score (0-100 scale)
+  const floodScore = floodRisk ? floodRisk.score : 0;
+  const aqiRaw = airQuality ? airQuality.usAqi : 0;
+  const aqiScore = Math.round(Math.min(100, (aqiRaw / 200) * 100));
+  const tempVal = weather ? weather.temperature : 70;
+  const heatwaveScore = Math.round(Math.min(100, Math.max(0, (tempVal - 70) * (100 / 35))));
+  const compositeScore = Math.max(floodScore, aqiScore, heatwaveScore);
+
+  let compositeLevel = "Low";
+  let compositeBadgeColor = "bg-green-100 text-green-800";
+  let compositeSubtext = "Low overall threat level";
+  if (compositeScore >= 75) {
+    compositeLevel = "Critical";
+    compositeBadgeColor = "bg-red-100 text-red-800 animate-pulse";
+    compositeSubtext = "Critical overall threat level";
+  } else if (compositeScore >= 50) {
+    compositeLevel = "High";
+    compositeBadgeColor = "bg-orange-100 text-orange-800";
+    compositeSubtext = "High overall threat level";
+  } else if (compositeScore >= 25) {
+    compositeLevel = "Moderate";
+    compositeBadgeColor = "bg-yellow-100 text-yellow-800";
+    compositeSubtext = "Moderate overall threat level";
+  }
+
   // Heat Wave status and logic based on today's maximum temperature
   const todayMaxTemp = weather?.todayMaxTemp;
   let heatWaveTemp = "104°F";
@@ -403,14 +428,14 @@ export default function DashboardPage() {
             <div className="p-2 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-100 group-hover:scale-110 transition-all duration-300">
               <ActivitySquare className="h-6 w-6" />
             </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              Stable
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${compositeBadgeColor}`}>
+              {compositeLevel}
             </span>
           </div>
           <h3 className="text-gray-500 text-sm font-medium">Vulnerability Score</h3>
-          <p className="text-2xl font-bold text-gray-900 mt-1">4.2/10</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{(compositeScore / 10).toFixed(1)}/10</p>
           <div className="mt-4 text-sm text-gray-600">
-            Based on infrastructure
+            {compositeSubtext}
           </div>
         </div>
       </div>

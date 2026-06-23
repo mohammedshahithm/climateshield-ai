@@ -6,6 +6,10 @@ import {
   ShieldAlert, ShieldCheck, Download, Droplets, ThermometerSun, 
   ActivitySquare, HeartPulse, CheckSquare, FileText, MapPin, Sparkles, Loader2
 } from "lucide-react";
+import { useLocation } from "@/providers/LocationContext";
+import { useWeather } from "@/hooks/useWeather";
+import { useAirQuality } from "@/hooks/useAirQuality";
+import { useFloodRisk } from "@/hooks/useFloodRisk";
 
 type AssessmentData = {
   city: string;
@@ -53,6 +57,11 @@ export default function AssessmentPage() {
   const [data, setData] = useState<AssessmentData>(initialData);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isClient, setIsClient] = useState(false);
+
+  const { city: contextCity, latitude, longitude } = useLocation();
+  const { weather } = useWeather(latitude, longitude);
+  const { airQuality } = useAirQuality(latitude, longitude);
+  const { floodRisk } = useFloodRisk(latitude, longitude);
   
   // Checklist State & Persistence
   const [checklist, setChecklist] = useState<ChecklistState>({
@@ -71,6 +80,23 @@ export default function AssessmentPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsClient(true);
+
+    // Pre-populate city and default environmental checkboxes from live metrics
+    if (contextCity) {
+      setData((prev) => {
+        const floodingHistory = floodRisk ? floodRisk.score > 40 : prev.floodingHistory;
+        const heatwaveExposure = weather ? weather.temperature > 90 : prev.heatwaveExposure;
+        const airQualityIssues = airQuality ? airQuality.usAqi > 100 : prev.airQualityIssues;
+        return {
+          ...prev,
+          city: prev.city || contextCity,
+          floodingHistory: prev.floodingHistory || floodingHistory,
+          heatwaveExposure: prev.heatwaveExposure || heatwaveExposure,
+          airQualityIssues: prev.airQualityIssues || airQualityIssues,
+        };
+      });
+    }
+
     const savedChecklist = localStorage.getItem("climateshield_checklist");
     if (savedChecklist) {
       try {
@@ -79,7 +105,7 @@ export default function AssessmentPage() {
         console.error("Failed to parse checklist state");
       }
     }
-  }, []);
+  }, [contextCity, weather, airQuality, floodRisk]);
 
   const updateChecklist = (key: keyof ChecklistState, value: boolean) => {
     const updated = { ...checklist, [key]: value };
@@ -239,7 +265,7 @@ export default function AssessmentPage() {
          locationStr = `${data.area ? data.area + ", " : ""}${data.city || ""}`;
          if (data.pincode) locationStr += ` - ${data.pincode}`;
       } else {
-         locationStr = "Saravanampatti, Coimbatore";
+         locationStr = contextCity ? `Center, ${contextCity}` : "Coimbatore, India";
       }
 
       doc.text(`Assessment Date: ${dateStr}`, 14, cursorY); cursorY += 6;
@@ -601,7 +627,7 @@ export default function AssessmentPage() {
                 <div className="flex-1 text-center md:text-left">
                   <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-50 border border-gray-200 text-gray-800 text-sm font-semibold mb-4 shadow-sm">
                     <MapPin className="h-4 w-4 text-primary-600" /> 
-                    {data.area || "Saravanampatti"}, {data.city || "Coimbatore"} {data.pincode ? `- ${data.pincode}` : ''}
+                    {data.area || "Center"}, {data.city || contextCity || "Coimbatore"} {data.pincode ? `- ${data.pincode}` : ''}
                   </div>
                   <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
                     <h2 className={`text-4xl md:text-5xl font-extrabold ${riskColor} tracking-tight`}>
