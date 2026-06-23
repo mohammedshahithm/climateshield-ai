@@ -68,6 +68,10 @@ class MockQueryBuilder {
     return this;
   }
 
+  limit(count: number) {
+    return this;
+  }
+
   insert(data: any) {
     this.action = 'insert';
     this.insertData = data;
@@ -277,6 +281,8 @@ class MockQueryBuilder {
             created_at: new Date(Date.now() - 86400000 * 10).toISOString()
           }
         ];
+      } else if (this.tableName === 'ai_queries') {
+        initialData = [];
       }
       localStorage.setItem(key, JSON.stringify(initialData));
       return initialData;

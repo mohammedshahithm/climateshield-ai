@@ -7,7 +7,7 @@ import {
   AlertTriangle, ShieldAlert, ActivitySquare, Users, 
   MapPin, PlusCircle, Trash2, Edit3, CheckCircle2,
   Clock, BarChart3, X, CheckSquare, Square, Loader2,
-  FileText, Send, Ambulance, Home, Droplet, Flame, Shield
+  FileText, Send, Ambulance, Home, Droplet, Flame, Shield, Brain
 } from "lucide-react";
 import type { AdminMarker } from "@/components/maps/AdminMapComponent";
 import { useAlerts } from "@/lib/AlertsContext";
@@ -88,6 +88,138 @@ export default function AdminDashboardPage() {
   // Filters State
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+
+  // AI Government Recommendations telemetry state
+  const [activeCityMetrics, setActiveCityMetrics] = useState<{
+    floodScore: number;
+    heatScore: number;
+    aqiRaw: number;
+    compositeScore: number;
+    riskLevel: string;
+  } | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [isDispatchingAI, setIsDispatchingAI] = useState(false);
+  const [isAIDispatchModalOpen, setIsAIDispatchModalOpen] = useState(false);
+  const { city: activeCityName } = useLocation();
+
+  useEffect(() => {
+    let active = true;
+    const fetchActiveMetrics = async () => {
+      setMetricsLoading(true);
+      try {
+        const [weather, aqi, flood] = await Promise.all([
+          fetchWeather(latitude, longitude),
+          fetchAirQuality(latitude, longitude),
+          fetchFloodRisk(latitude, longitude),
+        ]);
+        if (!active) return;
+
+        const floodVal = flood.score;
+        const aqiVal = aqi.usAqi;
+        const aqiScore = Math.round(Math.min(100, (aqiVal / 200) * 100));
+        const tempVal = weather.temperature;
+        const heatVal = Math.round(Math.min(100, Math.max(0, (tempVal - 70) * (100 / 35))));
+        const composite = Math.max(floodVal, aqiScore, heatVal);
+
+        let level = "Moderate";
+        if (composite >= 75) level = "Critical";
+        else if (composite >= 50) level = "High";
+        else if (composite >= 25) level = "Moderate";
+        else level = "Low";
+
+        setActiveCityMetrics({
+          floodScore: floodVal,
+          heatScore: heatVal,
+          aqiRaw: aqiVal,
+          compositeScore: composite,
+          riskLevel: level
+        });
+      } catch (err) {
+        console.error("Failed to load active metrics for admin recommendations:", err);
+      } finally {
+        if (active) setMetricsLoading(false);
+      }
+    };
+
+    fetchActiveMetrics();
+    return () => { active = false; };
+  }, [latitude, longitude]);
+
+  const governmentRecs = useMemo(() => {
+    const list: string[] = [];
+    if (!activeCityMetrics) return [];
+
+    const { floodScore, heatScore, aqiRaw } = activeCityMetrics;
+
+    if (floodScore >= 75) {
+      list.push(
+        "Clear all critical stormwater conduits and confirm pump operations.",
+        "Dispatch emergency rescue assets and evacuation transport to Zone A.",
+        "Broadcast pre-emptive emergency warning notices via regional SMS."
+      );
+    } else if (floodScore >= 50) {
+      list.push(
+        "Deploy mobile drainage pumps to waterlogging hotspots.",
+        "Alert and prepare relief shelters for potential citizens."
+      );
+    } else if (floodScore >= 25) {
+      list.push("Monitor canal water levels and check critical street drainage.");
+    }
+
+    if (heatScore >= 75) {
+      list.push(
+        "Launch air-conditioned public cooling centers across high-density wards.",
+        "Coordinate with electrical grid operators to protect transformer infrastructure."
+      );
+    } else if (heatScore >= 50) {
+      list.push(
+        "Enforce strict labor suspension guidelines during peak afternoon heat.",
+        "Supply government medical centers with hydration packs and IV lines."
+      );
+    }
+
+    if (aqiRaw >= 150) {
+      list.push(
+        "Enforce dust abatement directives at public work and construction sites.",
+        "Restrict heavy commercial diesel vehicle entries into city center."
+      );
+    } else if (aqiRaw >= 100) {
+      list.push("Run mist-purifying cannons in congested industrial zones.");
+    }
+
+    if (list.length === 0) {
+      list.push(
+        "Maintain normal sensor monitoring and response unit readiness.",
+        "Proceed with scheduled drain-cleaning maintenance."
+      );
+    }
+
+    return list;
+  }, [activeCityMetrics]);
+
+  const handleDispatchAIRecommendations = async () => {
+    setIsDispatchingAI(true);
+    try {
+      const availableUnits = resources.filter(r => r.status === "Available");
+      if (availableUnits.length > 0) {
+        const promises = availableUnits.slice(0, 2).map(unit => 
+          updateResource({
+            ...unit,
+            status: "En Route",
+            location: `${activeCityName} Area`
+          })
+        );
+        await Promise.all(promises);
+      }
+      showToast(`AI recommendations dispatched successfully. Alerts broadcasted for ${activeCityName}.`, "success");
+      setIsAIDispatchModalOpen(false);
+    } catch (err) {
+      console.error("AI Dispatch failed:", err);
+      showToast("Failed to dispatch AI recommendations.", "error");
+    } finally {
+      setIsDispatchingAI(false);
+    }
+  };
 
   // Load Data functions
   const fetchIncidents = async () => {
@@ -928,6 +1060,55 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+          {/* AI Government Recommendations Panel */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
+                <Brain className="h-4.5 w-4.5 text-red-500 animate-pulse" />
+                AI Government Recommendations
+              </h3>
+              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-extrabold uppercase">
+                Active Zone: {activeCityName}
+              </span>
+            </div>
+
+            <div className="p-4 space-y-4 text-xs">
+              {metricsLoading ? (
+                <div className="space-y-2 p-2">
+                  <div className="h-8 bg-gray-50 animate-pulse rounded border border-gray-100"></div>
+                  <div className="h-8 bg-gray-50 animate-pulse rounded border border-gray-100"></div>
+                </div>
+              ) : !activeCityMetrics ? (
+                <p className="text-gray-400 text-center">Failed to fetch metrics for recommendations.</p>
+              ) : (
+                <>
+                  <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 space-y-2">
+                    <p className="font-bold text-gray-700">Risk Assessment Analysis:</p>
+                    <p className="text-gray-500 leading-normal">
+                      The current composite score in {activeCityName} is <strong className="text-gray-900">{activeCityMetrics.compositeScore}/100</strong> ({activeCityMetrics.riskLevel} Risk). Dynamic government directives compiled:
+                    </p>
+                  </div>
+
+                  <ul className="space-y-3 pl-1">
+                    {governmentRecs.map((rec, idx) => (
+                      <li key={idx} className="flex gap-2 items-start leading-normal text-gray-600">
+                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
+                        <span>{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <button
+                    onClick={() => setIsAIDispatchModalOpen(true)}
+                    className="w-full py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold rounded-lg transition-colors cursor-pointer text-center"
+                  >
+                    Dispatch AI Recommendations
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Resource Deployment Panel */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
@@ -1471,6 +1652,58 @@ export default function AdminDashboardPage() {
                   className="flex-1 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 cursor-pointer"
                 >
                   Delete Resource
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Recommendations Dispatch Modal */}
+      {isAIDispatchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="absolute inset-0 bg-secondary-900/40 backdrop-blur-sm" onClick={() => !isDispatchingAI && setIsAIDispatchModalOpen(false)}></div>
+          <div className="bg-white rounded-2xl w-full max-w-md relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <Brain className="h-6 w-6 text-red-600 animate-bounce" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 text-center mb-2 font-black">Dispatch AI Directives</h3>
+              <p className="text-xs text-gray-500 text-center mb-6 leading-relaxed">
+                Confirm dispatch of all dynamic AI recommendations to municipal field operations in <strong>{activeCityName}</strong>. This will deploy available response units and update telemetry trackers.
+              </p>
+
+              <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-100">
+                <ul className="space-y-2 text-xs">
+                  {governmentRecs.map((rec, i) => (
+                    <li key={i} className="flex items-start gap-2 text-gray-600">
+                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+                      <span>{rec}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  disabled={isDispatchingAI}
+                  onClick={() => setIsAIDispatchModalOpen(false)} 
+                  className="flex-1 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-lg hover:bg-gray-50 disabled:opacity-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  disabled={isDispatchingAI}
+                  onClick={handleDispatchAIRecommendations} 
+                  className="flex-1 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isDispatchingAI ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Dispatching...
+                    </>
+                  ) : (
+                    "Confirm Dispatch"
+                  )}
                 </button>
               </div>
             </div>

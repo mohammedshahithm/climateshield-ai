@@ -15,6 +15,68 @@ import { useLocation } from "@/providers/LocationContext";
 import { useWeather } from "@/hooks/useWeather";
 import { useAirQuality } from "@/hooks/useAirQuality";
 import { useFloodRisk } from "@/hooks/useFloodRisk";
+import { fetchWeather, geocodeAddress, fetchConsolidatedData, getWeatherDetails } from "@/lib/weather";
+import { fetchAirQuality } from "@/lib/airQuality";
+import { fetchFloodRisk } from "@/lib/floodRisk";
+import { createClient } from "@/lib/supabase/client";
+
+// Helper to format chatbot message markdown-like elements into HTML safely
+function formatMessageText(text: string): string {
+  let html = text.replace(/\n/g, "<br/>");
+  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/•\s*(.*?)(?:<br\/>|$)/g, '<div class="flex gap-1.5 items-start pl-2 mb-1"><span>•</span><span>$1</span></div>');
+  html = html.replace(/###\s*(.*?)(?:<br\/>|$)/g, '<h4 class="text-sm font-bold text-gray-900 mt-2 mb-1">$1</h4>');
+  return html;
+}
+
+// Helpers for recommendations based on conditions
+function getClimateSafetyRecommendations(temp: number, floodRisk: number, aqi: number) {
+  return {
+    heatwave: temp > 85 
+      ? "Avoid direct sun exposure between 11 AM and 4 PM, stay hydrated with electrolyte fluids, and check on vulnerable individuals." 
+      : "No extreme heat stress risk active. Keep standard hydration.",
+    flood: floodRisk > 40
+      ? "Evacuate low-lying zones immediately if directed, avoid wading/driving through standing waters, and secure essential household items."
+      : "Low flood risk detected. Keep local storm gutters clear of solid waste.",
+    aqi: aqi > 100
+      ? "Restrict heavy outdoor workouts, keep windows closed to seal out fine particulates, and wear high-grade N95 masks."
+      : "Air quality levels are safe. Outdoor exposure is fine.",
+    general: "Monitor daily climate telemetries, keep a power bank and first-aid safety kit fully prepared, and coordinate with municipal response units."
+  };
+}
+
+function getClimateSafetyRecommendationsList(temp: number, floodRisk: number, aqi: number): string[] {
+  const list: string[] = [];
+  if (temp > 85) {
+    list.push("Thermal Stress: Avoid direct sun between 11 AM - 4 PM; consume electrolyte fluids regularly.");
+  }
+  if (floodRisk > 40) {
+    list.push("Flood Threat: Store emergency food/water supplies, and verify closest rescue shelter locations.");
+  }
+  if (aqi > 100) {
+    list.push("Air Pollution: Close air vents, wear high-grade N95 masks, and run indoor HEPA filters.");
+  }
+  
+  if (list.length < 1) {
+    list.push("Sensors indicate safe climate conditions. Maintain general resource readiness.");
+  }
+  if (list.length < 2) {
+    list.push("Monitor local weather broadcasts and keep household emergency kits updated.");
+  }
+  if (list.length < 3) {
+    list.push("Save contact numbers of municipal emergency dispatch units for quick access.");
+  }
+  return list.slice(0, 3);
+}
+
+function getRiskBadge(level: string): string {
+  let badgeClass = "";
+  if (level === "Low") badgeClass = "bg-green-100 text-green-800 border-green-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase";
+  else if (level === "Moderate") badgeClass = "bg-yellow-100 text-yellow-800 border-yellow-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase";
+  else if (level === "High") badgeClass = "bg-orange-100 text-orange-800 border-orange-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase";
+  else if (level === "Critical") badgeClass = "bg-red-100 text-red-800 border-red-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase animate-pulse";
+  return `<span class="${badgeClass}">${level}</span>`;
+}
 
 // Dynamic map loading to avoid SSR window errors
 const AIForecastMap = dynamic(() => import("@/components/maps/AIForecastMap"), { 
@@ -124,49 +186,82 @@ export default function AiIntelligencePage() {
     const citizen: string[] = [];
     const government: string[] = [];
 
-    if (metrics.primaryFactor === "Flood Risk") {
+    // Flood risk checks
+    if (metrics.floodScore >= 75) {
       citizen.push(
         "Move essential furniture, documents, and appliances to higher floors.",
-        "Identify and mapping designated community concrete shelters.",
-        "Avoid wading or driving through any standing drainage waters.",
-        "Keep emergency power banks, drinking water, and dry rations ready."
+        "Evacuate low-lying areas and report to designated community shelters.",
+        "Avoid wading or driving through any standing drainage waters."
       );
       government.push(
         "Clear critical stormwater networks and check pumping status.",
         "Dispatch community rescue boats and teams to low-lying wards.",
-        "Issue pre-emptive localized evacuation notices via SMS broadcasts.",
-        "Ensure emergency shelter stock is ready for potential citizens."
+        "Issue pre-emptive localized evacuation notices via SMS broadcasts."
       );
-    } else if (metrics.primaryFactor === "Air Quality") {
+    } else if (metrics.floodScore >= 50) {
       citizen.push(
-        "Restrict heavy outdoor exercise and play during high AQI periods.",
-        "Equip household filtration units and close external vents/windows.",
-        "Wear certified N95 masks if outdoor commute is mandatory.",
-        "Keep emergency inhalers and medications close by."
+        "Keep emergency power banks, drinking water, and dry rations ready.",
+        "Verify your household evacuation routes and nearest shelter details."
       );
       government.push(
-        "Enforce strict dust abatement directives at public work sites.",
-        "Restrict heavy transport operations inside industrial corridors.",
-        "Deploy mobile public health units to distribute masks.",
-        "Monitor hospital admissions for asthma and COPD cases."
+        "Position standby emergency drainage pump units in vulnerable areas.",
+        "Ensure emergency shelter stock is ready for potential citizens."
       );
-    } else {
+    } else if (metrics.floodScore >= 25) {
+      citizen.push("Watch for localized pooling in streets; clear private drains.");
+      government.push("Perform routine clearing of high-risk street gutters.");
+    }
+
+    // Heat risk checks
+    if (metrics.heatScore >= 75) {
       citizen.push(
         "Minimize direct solar exposure between peak hours of 11 AM and 4 PM.",
-        "Maintain high hydration using electrolyte fluids regularly.",
-        "Use lightweight, light-colored cotton garments to reflect heat.",
-        "Frequently check on senior neighbors and keep pets indoor."
+        "Maintain high hydration using electrolyte fluids regularly."
       );
       government.push(
         "Launch municipal air-conditioned cooling bays across active zones.",
+        "Coordinate with electrical providers to prevent grid overload warnings."
+      );
+    } else if (metrics.heatScore >= 50) {
+      citizen.push(
+        "Use lightweight, light-colored cotton garments to reflect heat.",
+        "Check on senior neighbors and keep pets indoor."
+      );
+      government.push(
         "Suspend outdoor public labor during peak temperature hours.",
-        "Coordinate with electrical providers to prevent grid overload warnings.",
         "Ensure regional clinics are stocked with emergency hydration IVs."
       );
     }
 
+    // AQI risk checks
+    if (metrics.aqiRaw >= 150) {
+      citizen.push(
+        "Restrict heavy outdoor exercise and play during high AQI periods.",
+        "Wear certified N95 masks if outdoor commute is mandatory."
+      );
+      government.push(
+        "Enforce strict dust abatement directives at public work sites.",
+        "Deploy mobile public health units to distribute masks."
+      );
+    } else if (metrics.aqiRaw >= 100) {
+      citizen.push("Equip household filtration units and close external vents/windows.");
+      government.push("Restrict heavy transport operations inside industrial corridors.");
+    }
+
+    // Default safety measures if everything is low risk
+    if (citizen.length === 0) {
+      citizen.push(
+        "All climate indicators are currently in safe thresholds. Normal precautions apply.",
+        "Monitor local weather broadcasts and keep safety kits updated."
+      );
+      government.push(
+        "Maintaining regular sensor telemetry monitoring and system readiness.",
+        "Continue routine infrastructure maintenance operations."
+      );
+    }
+
     return { citizen, government };
-  }, [metrics.primaryFactor]);
+  }, [metrics]);
 
   // Dynamically map Recharts chart data based on current metric values
   const dynamicForecastData = useMemo(() => {
@@ -180,18 +275,61 @@ export default function AiIntelligencePage() {
     ];
   }, [metrics]);
 
-  // Initial welcome message for the selected city
+  // Load query history on mount or city change
   useEffect(() => {
-    if (city) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMessages([
-        {
-          sender: "ai",
-          text: `Hello! I am your ClimateShield AI Assistant. I have analyzed current sensors for **${city}**. The overall Risk Level is **${metrics.riskLevel}** (${metrics.compositeScore}/100) with **${metrics.primaryFactor}** being the primary hazard. How can I help you prepare or analyze forecasts today?`,
-          timestamp: new Date()
+    async function loadHistory() {
+      if (!city) return;
+      
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("ai_queries")
+          .select("*")
+          .eq("city", city)
+          .order("created_at", { ascending: true })
+          .limit(15);
+          
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const loadedMessages: Message[] = [];
+          data.forEach((row: any) => {
+            loadedMessages.push({
+              sender: "user",
+              text: row.user_query,
+              timestamp: new Date(row.created_at)
+            });
+            loadedMessages.push({
+              sender: "ai",
+              text: row.ai_response,
+              timestamp: new Date(row.created_at)
+            });
+          });
+          setMessages(loadedMessages);
+        } else {
+          // Fallback to welcome message if no history
+          setMessages([
+            {
+              sender: "ai",
+              text: `Hello! I am your ClimateShield AI Assistant. I have analyzed current sensors for **${city}**. The overall Risk Level is **${metrics.riskLevel}** (${metrics.compositeScore}/100) with **${metrics.primaryFactor}** being the primary hazard. How can I help you prepare or analyze forecasts today?`,
+              timestamp: new Date()
+            }
+          ]);
         }
-      ]);
+      } catch (err) {
+        console.error("Failed to load chat history:", err);
+        // Fallback to welcome message
+        setMessages([
+          {
+            sender: "ai",
+            text: `Hello! I am your ClimateShield AI Assistant. I have analyzed current sensors for **${city}**. The overall Risk Level is **${metrics.riskLevel}** (${metrics.compositeScore}/100) with **${metrics.primaryFactor}** being the primary hazard. How can I help you prepare or analyze forecasts today?`,
+            timestamp: new Date()
+          }
+        ]);
+      }
     }
+    
+    loadHistory();
   }, [city, metrics.riskLevel, metrics.compositeScore, metrics.primaryFactor]);
 
   // Scroll chatbot to bottom
@@ -199,9 +337,9 @@ export default function AiIntelligencePage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
-    if (!text) return;
+    if (!text || isTyping) return;
 
     if (!textToSend) setInputText("");
 
@@ -210,30 +348,265 @@ export default function AiIntelligencePage() {
 
     setIsTyping(true);
 
-    // Simulate AI response delay
-    setTimeout(() => {
-      let reply = "";
-      const lower = text.toLowerCase();
+    let reply = "";
+    const lower = text.toLowerCase();
 
-      if (lower.includes("overall") || lower.includes("risk") || lower.includes("score") || lower.includes("level")) {
-        reply = `Currently in **${city}**, the composite Climate Risk Score is **${metrics.compositeScore}/100** (${metrics.riskLevel} Risk). The primary factor is **${metrics.primaryFactor}**. ${metrics.riskExplanation}`;
-      } else if (lower.includes("flood") || lower.includes("rain") || lower.includes("water") || lower.includes("rainfall")) {
-        reply = `The flood risk in **${city}** is currently at **${metrics.floodScore}%**. Saturated soil and storm drainage forecasts show this could increase by 25% over the next 7 days. We recommend citizen precautions like: "${recommendations.citizen[0]}"`;
-      } else if (lower.includes("air") || lower.includes("aqi") || lower.includes("pollution") || lower.includes("smog")) {
-        reply = `The US AQI in **${city}** is currently **${metrics.aqiRaw}** (${airQuality?.status || "Moderate"}). Predictions suggest AQI could elevate by 15-20% by the weekend due to local particulate accumulation. Recommendations include keeping windows closed.`;
-      } else if (lower.includes("heat") || lower.includes("temp") || lower.includes("hot") || lower.includes("sun") || lower.includes("weather")) {
-        reply = `Our sensor reads **${metrics.tempVal}°F** (${weather?.condition || "Clear"}) in **${city}**. Heatwave stresses calculate to a **${metrics.heatScore}%** risk level. Municipal cooling bays are recommended if indices surpass 100°F.`;
-      } else if (lower.includes("citizen") || lower.includes("safe") || lower.includes("action") || lower.includes("what should i do")) {
-        reply = `For citizens in **${city}**, the priority protocols are:\n\n` + recommendations.citizen.map((r, i) => `${i+1}. ${r}`).join("\n");
-      } else if (lower.includes("government") || lower.includes("municipal") || lower.includes("actions") || lower.includes("city")) {
-        reply = `Our system recommends the following municipal command directives for **${city}**:\n\n` + recommendations.government.map((r, i) => `${i+1}. ${r}`).join("\n");
+    // Determine which city we are querying
+    let targetCityName = city;
+    let targetLat = latitude;
+    let targetLon = longitude;
+
+    // Predefined coordinate map for reliable local lookups
+    const CITY_COORDINATES: Record<string, { lat: number; lon: number; fullName: string }> = {
+      chennai: { lat: 13.0827, lon: 80.2707, fullName: "Chennai" },
+      kallakurichi: { lat: 11.7380, lon: 78.9639, fullName: "Kallakurichi" },
+      mumbai: { lat: 19.0760, lon: 72.8777, fullName: "Mumbai" },
+      delhi: { lat: 28.7041, lon: 77.1025, fullName: "Delhi" },
+      bangalore: { lat: 12.9716, lon: 77.5946, fullName: "Bangalore" },
+      trichy: { lat: 10.7905, lon: 78.7047, fullName: "Trichy" },
+      tiruchirappalli: { lat: 10.7905, lon: 78.7047, fullName: "Trichy" },
+      hyderabad: { lat: 17.3850, lon: 78.4867, fullName: "Hyderabad" },
+      kolkata: { lat: 22.5726, lon: 88.3639, fullName: "Kolkata" },
+    };
+
+    let matchedKey = "";
+    for (const key of Object.keys(CITY_COORDINATES)) {
+      if (lower.includes(key)) {
+        matchedKey = key;
+        targetCityName = CITY_COORDINATES[key].fullName;
+        targetLat = CITY_COORDINATES[key].lat;
+        targetLon = CITY_COORDINATES[key].lon;
+        break;
+      }
+    }
+
+    // Geocoding fallback if no local match
+    if (!matchedKey) {
+      // Find city name after prepositions or search text
+      const prepositionMatch = text.match(/(?:in|is|will|at|for|about|safety of)\s+([A-Z][a-zA-Z\s]+)/i);
+      let potentialCity = "";
+      if (prepositionMatch && prepositionMatch[1]) {
+        potentialCity = prepositionMatch[1].trim().split(" ")[0];
       } else {
-        reply = `I am monitoring data feeds for **${city}**. Our active sensors report:\n- 🌧️ Flood Risk: **${metrics.floodScore}%**\n- 🌡️ Temperature: **${metrics.tempVal}°F**\n- 💨 Air Quality: **${metrics.aqiRaw} AQI**\n\nAsk me details about flood safety, air quality forecasts, or citizen safety protocols!`;
+        const words = text.split(/\s+/);
+        const lastWord = words[words.length - 1].replace(/[?.!,]/g, "");
+        if (lastWord && lastWord.length > 2 && lastWord[0] === lastWord[0].toUpperCase() && !["today", "safe", "this", "week", "risky", "city", "tomorrow", "forecast", "weather", "risk", "flood", "heatwave"].includes(lastWord.toLowerCase())) {
+          potentialCity = lastWord;
+        }
       }
 
-      setMessages(prev => [...prev, { sender: "ai", text: reply, timestamp: new Date() }]);
+      if (potentialCity) {
+        try {
+          const geo = await geocodeAddress(potentialCity);
+          if (geo) {
+            targetCityName = geo.name;
+            targetLat = geo.latitude;
+            targetLon = geo.longitude;
+            matchedKey = "geocoded";
+          } else {
+            setMessages(prev => [...prev, { sender: "ai", text: "Unable to find climate data for this location.", timestamp: new Date() }]);
+            setIsTyping(false);
+            return;
+          }
+        } catch (err) {
+          setMessages(prev => [...prev, { sender: "ai", text: "Unable to find climate data for this location.", timestamp: new Date() }]);
+          setIsTyping(false);
+          return;
+        }
+      } else {
+        // Default to active page city if no city is found in query
+        targetCityName = city;
+        targetLat = latitude;
+        targetLon = longitude;
+      }
+    }
+
+    // 2. Fetch live data
+    let weatherData, aqiData, floodData;
+    try {
+      [weatherData, aqiData, floodData] = await Promise.all([
+        fetchWeather(targetLat, targetLon),
+        fetchAirQuality(targetLat, targetLon),
+        fetchFloodRisk(targetLat, targetLon),
+      ]);
+    } catch (apiErr) {
+      console.error("OpenWeather API failed:", apiErr);
+      setMessages(prev => [...prev, { sender: "ai", text: "Weather service temporarily unavailable.", timestamp: new Date() }]);
       setIsTyping(false);
-    }, 1000);
+      return;
+    }
+
+    // 3. Normalized Risk Scoring Calculations
+    const tempF = weatherData.temperature;
+    let tempRisk = 0;
+    if (tempF >= 70) {
+      tempRisk = Math.min(100, Math.max(0, ((tempF - 70) / (105 - 70)) * 100));
+    } else {
+      tempRisk = Math.min(100, Math.max(0, ((70 - tempF) / (70 - 35)) * 100));
+    }
+
+    const floodRiskVal = floodData.score;
+
+    const usAqi = aqiData.usAqi;
+    const aqiRiskVal = Math.min(100, (usAqi / 200) * 100);
+
+    const humidityVal = weatherData.humidity;
+    const humidityRiskVal = humidityVal;
+
+    const CITY_VULNERABILITY: Record<string, number> = {
+      "chennai": 60,
+      "delhi": 70,
+      "mumbai": 65,
+      "bangalore": 40,
+      "trichy": 45,
+      "kallakurichi": 50,
+    };
+    const cityKey = targetCityName.toLowerCase();
+    let vulnerabilityScoreVal = 50;
+    for (const [key, val] of Object.entries(CITY_VULNERABILITY)) {
+      if (cityKey.includes(key)) {
+        vulnerabilityScoreVal = val;
+        break;
+      }
+    }
+
+    const tempPoints = tempRisk * 0.30;
+    const floodPoints = floodRiskVal * 0.25;
+    const aqiPoints = aqiRiskVal * 0.25;
+    const humidityPoints = humidityRiskVal * 0.10;
+    const vulnPoints = vulnerabilityScoreVal * 0.10;
+
+    const rawComposite = tempPoints + floodPoints + aqiPoints + humidityPoints + vulnPoints;
+    let finalComposite = Math.round(rawComposite);
+
+    // Safeguard rule: Do NOT return 100/100 risk unless conditions are genuinely severe.
+    if (finalComposite >= 95) {
+      const isGenuinelySevere = usAqi > 300 || floodRiskVal > 90 || tempF > 105;
+      if (!isGenuinelySevere) {
+        finalComposite = 95;
+      }
+    }
+
+    let riskLevel = "Moderate";
+    if (finalComposite > 75) riskLevel = "Critical";
+    else if (finalComposite > 50) riskLevel = "High";
+    else if (finalComposite > 25) riskLevel = "Moderate";
+    else riskLevel = "Low";
+
+    // 4. Classify intent
+    let intent: "WEATHER" | "FLOOD" | "AIR QUALITY" | "SAFETY" | "FULL REPORT" = "FULL REPORT";
+
+    if (lower.includes("climate report") || lower.includes("full report") || lower.includes("complete report")) {
+      intent = "FULL REPORT";
+    } else if (lower.includes("flood") || lower.includes("flooding") || lower.includes("rainfall risk") || lower.includes("water level")) {
+      intent = "FLOOD";
+    } else if (lower.includes("aqi") || lower.includes("air quality") || lower.includes("pollution")) {
+      intent = "AIR QUALITY";
+    } else if (lower.includes("safe") || lower.includes("danger") || lower.includes("risk today")) {
+      intent = "SAFETY";
+    } else if (lower.includes("weather") || lower.includes("temperature") || lower.includes("humidity") || lower.includes("forecast") || lower.includes("climate")) {
+      intent = "WEATHER";
+    } else {
+      intent = "FULL REPORT";
+    }
+
+    console.log("Detected City:", targetCityName);
+    console.log("Detected Intent:", intent);
+
+    if (intent === "WEATHER") {
+      reply = `### Weather Report for ${targetCityName}
+Temperature: ${tempF}°F
+Condition: ${weatherData.condition}
+Humidity: ${humidityVal}%
+Wind Speed: ${weatherData.windSpeed} mph`;
+    } else if (intent === "FLOOD") {
+      let floodRiskLevel = "Low";
+      if (floodRiskVal >= 75) floodRiskLevel = "Critical";
+      else if (floodRiskVal >= 50) floodRiskLevel = "High";
+      else if (floodRiskVal >= 25) floodRiskLevel = "Moderate";
+
+      const floodRec = getClimateSafetyRecommendations(tempF, floodRiskVal, usAqi).flood;
+      reply = `### Flood Report for ${targetCityName}
+Flood Risk %: ${floodRiskVal}%
+Flood Risk Level: ${floodRiskLevel}
+Flood Safety Recommendations: ${floodRec}`;
+    } else if (intent === "AIR QUALITY") {
+      let pollutionCategory = "Good";
+      if (usAqi > 300) pollutionCategory = "Hazardous";
+      else if (usAqi > 200) pollutionCategory = "Very Unhealthy";
+      else if (usAqi > 150) pollutionCategory = "Unhealthy";
+      else if (usAqi > 100) pollutionCategory = "Unhealthy for Sensitive Groups";
+      else if (usAqi > 50) pollutionCategory = "Moderate";
+
+      const healthRec = getClimateSafetyRecommendations(tempF, floodRiskVal, usAqi).aqi;
+      reply = `### Air Quality Report for ${targetCityName}
+AQI: ${usAqi}
+Pollution Category: ${pollutionCategory}
+Health Recommendations: ${healthRec}`;
+    } else if (intent === "SAFETY") {
+      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi);
+      reply = `### Safety Report for ${targetCityName}
+Composite Risk Score: ${finalComposite}/100
+Risk Level: ${riskLevel}
+Recommendations:
+• ${recs[0]}
+• ${recs[1]}
+• ${recs[2]}`;
+    } else {
+      // FULL REPORT
+      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi);
+      let floodRiskLevel = "Low";
+      if (floodRiskVal >= 75) floodRiskLevel = "Critical";
+      else if (floodRiskVal >= 50) floodRiskLevel = "High";
+      else if (floodRiskVal >= 25) floodRiskLevel = "Moderate";
+
+      let pollutionCategory = "Good";
+      if (usAqi > 300) pollutionCategory = "Hazardous";
+      else if (usAqi > 200) pollutionCategory = "Very Unhealthy";
+      else if (usAqi > 150) pollutionCategory = "Unhealthy";
+      else if (usAqi > 100) pollutionCategory = "Unhealthy for Sensitive Groups";
+      else if (usAqi > 50) pollutionCategory = "Moderate";
+
+      reply = `### Full Climate Report for ${targetCityName}
+
+**Weather**:
+• Temperature: ${tempF}°F
+• Condition: ${weatherData.condition}
+• Humidity: ${humidityVal}%
+• Wind Speed: ${weatherData.windSpeed} mph
+
+**Flood**:
+• Flood Risk %: ${floodRiskVal}%
+• Flood Risk Level: ${floodRiskLevel}
+
+**Air Quality**:
+• AQI: ${usAqi}
+• Pollution Category: ${pollutionCategory}
+
+**Composite Risk**:
+• Composite Risk Score: ${finalComposite}/100
+• Risk Level: ${riskLevel}
+
+**Recommendations**:
+• ${recs[0]}
+• ${recs[1]}
+• ${recs[2]}`;
+    }
+
+    // 5. Store in Supabase
+    try {
+      const supabase = createClient();
+      await supabase.from("ai_queries").insert({
+        city: targetCityName,
+        user_query: text,
+        ai_response: reply,
+      });
+    } catch (dbErr) {
+      console.error("Failed to store chatbot interaction in Supabase:", dbErr);
+    }
+
+    setMessages(prev => [...prev, { sender: "ai", text: reply, timestamp: new Date() }]);
+    setIsTyping(false);
   };
 
   const handleExecuteActions = () => {
@@ -258,7 +631,7 @@ export default function AiIntelligencePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Brain className="h-6 w-6 text-primary-600 animate-pulse" />
-            AI Climate Intelligence Center
+            AI Climate Assistant
           </h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-1">
             <Sparkles className="h-4 w-4 text-yellow-500 fill-yellow-500" />
@@ -505,7 +878,7 @@ export default function AiIntelligencePage() {
               </div>
 
               {/* Chat log window */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50/50 max-h-[300px]">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50/50">
                 {messages.map((m, i) => (
                   <div key={i} className={`flex items-end gap-2 ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                     {m.sender === "ai" && (
@@ -513,12 +886,12 @@ export default function AiIntelligencePage() {
                         <Brain className="h-3.5 w-3.5 text-primary-600" />
                       </div>
                     )}
-                    <div className={`p-3 rounded-2xl text-xs max-w-[80%] leading-relaxed ${
+                    <div className={`p-3 rounded-2xl text-xs max-w-[85%] leading-relaxed ${
                       m.sender === "user" 
                         ? "bg-primary-600 text-white rounded-br-none shadow-sm" 
                         : "bg-white text-gray-800 border border-gray-200 rounded-bl-none shadow-xs"
                     }`}>
-                      <p dangerouslySetInnerHTML={{ __html: m.text.replace(/\n/g, '<br/>') }}></p>
+                      <p dangerouslySetInnerHTML={{ __html: formatMessageText(m.text) }}></p>
                     </div>
                   </div>
                 ))}
@@ -527,25 +900,39 @@ export default function AiIntelligencePage() {
                     <div className="bg-primary-100 p-1.5 rounded-full shrink-0">
                       <Brain className="h-3.5 w-3.5 text-primary-600 animate-bounce" />
                     </div>
-                    <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-bl-none text-xs text-gray-500">
-                      Thinking...
+                    <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-bl-none text-xs text-gray-500 flex items-center gap-1.5 shadow-xs">
+                      <RefreshCw className="h-3 w-3 animate-spin text-primary-500 shrink-0" />
+                      <span>AI is analyzing climate telemetry...</span>
+                      <div className="flex gap-1 ml-1.5">
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </div>
                     </div>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Quick suggestion tags */}
-              <div className="px-4 py-2 bg-white border-t border-gray-100 flex flex-wrap gap-1.5 overflow-x-auto no-scrollbar">
-                <button onClick={() => handleSendMessage("What is the overall risk today?")} className="px-2 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full text-[10px] font-semibold text-gray-600 transition-colors">
-                  Risk Score?
-                </button>
-                <button onClick={() => handleSendMessage("Tell me about flood safety")} className="px-2 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full text-[10px] font-semibold text-gray-600 transition-colors">
-                  Flood Safety?
-                </button>
-                <button onClick={() => handleSendMessage("Give me citizen safety recommendations")} className="px-2 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full text-[10px] font-semibold text-gray-600 transition-colors">
-                  Citizen Protocols?
-                </button>
+              {/* Dynamic suggestion chips */}
+              <div className="px-4 py-2 bg-white border-t border-gray-100 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth whitespace-nowrap">
+                {[
+                  "What is the weather in Chennai?",
+                  "What is the flood risk in Delhi?",
+                  "Is Kallakurichi safe today?",
+                  "Air quality in Mumbai",
+                  "Give me a climate report for Trichy",
+                  "What should I do during a heatwave?",
+                ].map((chipText, i) => (
+                  <button 
+                    key={i} 
+                    type="button"
+                    onClick={() => handleSendMessage(chipText)} 
+                    className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-full text-[10px] font-bold text-primary-700 transition-colors shrink-0 cursor-pointer"
+                  >
+                    {chipText}
+                  </button>
+                ))}
               </div>
 
               {/* Input section */}
@@ -553,11 +940,12 @@ export default function AiIntelligencePage() {
                 <input 
                   type="text" 
                   value={inputText}
+                  disabled={isTyping}
                   onChange={e => setInputText(e.target.value)}
                   placeholder="Ask about weather, AQI, safety..."
-                  className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
                 />
-                <button type="submit" className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-sm transition-colors cursor-pointer">
+                <button type="submit" disabled={isTyping} className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-50">
                   <Send className="h-4 w-4" />
                 </button>
               </form>

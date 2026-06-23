@@ -179,7 +179,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { name: "Risk Maps", href: "/dashboard/risk-maps", icon: Map },
     { name: "Incidents", href: "/dashboard/incidents", icon: AlertTriangle },
     { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
-    { name: "AI Intelligence", href: "/dashboard/ai-intelligence", icon: Brain },
+    { name: "AI Assistant", href: "/dashboard/ai-intelligence", icon: Brain },
     ...(userRole === "admin" ? [{ name: "Admin Center", href: "/dashboard/admin", icon: Settings }] : []),
   ];
 

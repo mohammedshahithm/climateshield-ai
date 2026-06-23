@@ -6,7 +6,7 @@ import {
   MapPin, 
   ActivitySquare, CloudRain, Wind, ThermometerSun,
   Droplets, ArrowRight, Siren, PhoneCall, Sun, FileX, CloudLightning,
-  Cloud, CloudSnow, Home, Ambulance, Droplet
+  Cloud, CloudSnow, Home, Ambulance, Droplet, Brain, Send
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import { AlertCategory, Severity } from "@/lib/mockAlerts";
@@ -275,6 +275,45 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* AI Climate Summary Card */}
+      <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 rounded-2xl p-6 border border-indigo-100 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-all hover:shadow-md duration-300">
+        <div className="flex-1 space-y-3">
+          <div className="flex items-center gap-2 text-indigo-850 font-bold text-sm">
+            <span className="p-1.5 bg-indigo-100 rounded-lg text-indigo-650 shrink-0">
+              <Brain className="h-5 w-5 animate-pulse" />
+            </span>
+            <span>AI Predictive Insight Center</span>
+          </div>
+          <h3 className="text-xl font-extrabold text-gray-900">
+            {weather?.locationName || "Local Zone"} Status Summary
+          </h3>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Composite Climate Risk evaluates to <strong className="text-indigo-700 font-bold">{compositeScore}/100</strong> (<span className="font-semibold">{compositeLevel} Risk</span>) with a hyper-local Vulnerability rating of <strong className="text-purple-700 font-bold">{(compositeScore / 10).toFixed(1)}/10</strong>. 
+            {compositeScore >= 75 ? " Severe hazards are currently driving critical threat indices. Citizens must follow active emergency advisories immediately." :
+             compositeScore >= 50 ? " Elevated threat levels detected. Ensure emergency preparation packs are ready and monitor local updates." :
+             compositeScore >= 25 ? " Moderate exposure is active. Safe for standard operations, but caution advised during peak hours." :
+             " Safe environment with minimal weather exposure. No immediate alerts or active advisories."}
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1 text-xs">
+            <span className="px-2.5 py-1 bg-white border border-gray-150 rounded-lg text-gray-600 font-medium">
+              🌧️ Flood risk: <strong className="text-gray-900">{floodScore}%</strong>
+            </span>
+            <span className="px-2.5 py-1 bg-white border border-gray-150 rounded-lg text-gray-600 font-medium">
+              🌡️ Thermal score: <strong className="text-gray-900">{heatwaveScore}%</strong>
+            </span>
+            <span className="px-2.5 py-1 bg-white border border-gray-150 rounded-lg text-gray-600 font-medium">
+              💨 Air Quality: <strong className="text-gray-900">{aqiRaw} AQI</strong>
+            </span>
+          </div>
+        </div>
+        <Link 
+          href="/dashboard/ai-intelligence"
+          className="px-5 py-3 bg-indigo-650 hover:bg-indigo-755 text-white font-bold rounded-xl shadow-sm hover:shadow transition-all text-xs flex items-center gap-2 cursor-pointer whitespace-nowrap"
+        >
+          <Send className="h-4 w-4" /> Consult AI Assistant
+        </Link>
+      </div>
 
       {/* Risk Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -627,6 +666,55 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* AI Risk Explanations */}
+      <div className="bg-white rounded-2xl border border-gray-105 p-6 shadow-sm space-y-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Brain className="h-5 w-5 text-indigo-500" />
+            AI Climate Scoring Methodologies
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">Understanding how our localized AI models calculate risk and vulnerability indices.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200 transition-all duration-300">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-2">
+              <span className="p-1 bg-blue-100 text-blue-600 rounded">🌧️</span> Flood Risk Scoring
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Our flood model aggregates forecasted rainfall sum (0-50 pts) over the next 24 hours, current humidity levels (0-25 pts), and satellite weather codes (0-25 pts). If the calculated risk index exceeds 50%, emergency drainage stations are deployed and waterlogged alarms trigger.
+            </p>
+          </div>
+
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200 transition-all duration-300">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-2">
+              <span className="p-1 bg-red-100 text-red-600 rounded">🌡️</span> Heat Risk Scoring
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Thermal stress evaluates the maximum projected daytime temperature against a standard baseline of 70°F. Temperatures above 100°F indicate high risk, triggering automated municipal warnings and Suspend-Labor alerts for outdoor public workforce.
+            </p>
+          </div>
+
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200 transition-all duration-300">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-2">
+              <span className="p-1 bg-teal-100 text-teal-600 rounded">💨</span> AQI Risk Scoring
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Air Quality Index (AQI) converts PM2.5 and PM10 particulate matters from localized sensors using standard US EPA breakpoint formulas. Values exceeding 100 US AQI trigger mask distribution protocols and industrial chimney smoke abatement directives.
+            </p>
+          </div>
+
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-200 transition-all duration-300">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2 mb-2">
+              <span className="p-1 bg-purple-100 text-purple-600 rounded">🛡️</span> Vulnerability Score
+            </h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              The Vulnerability Index (0.0 to 10.0 scale) is mapped from the maximum composite index of the driving hazards (Flood, Heat, or AQI) adjusted by local infrastructure capacity. Higher values indicate critical exposure to immediate hazards.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Report Incident Modal */}
       {isReportModalOpen && (
