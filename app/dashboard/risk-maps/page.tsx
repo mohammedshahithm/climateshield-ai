@@ -574,7 +574,7 @@ export default function RiskMapsPage() {
                     <p className="font-bold text-gray-800 truncate">{nearestShelter.shelter.name}</p>
                     <div className="flex justify-between text-gray-500 text-[10px]">
                       <span>{nearestShelter.distance.toFixed(1)} km away</span>
-                      <span className={nearestShelter.shelter.status === "Available" ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
+                      <span className={nearestShelter.shelter.status === "Active" ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
                         {nearestShelter.shelter.capacity - nearestShelter.shelter.occupied} spaces left
                       </span>
                     </div>
@@ -591,7 +591,7 @@ export default function RiskMapsPage() {
                       <span className="font-bold text-gray-800">{nearestAmbulance.distance.toFixed(1)} km away</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
                         nearestAmbulance.ambulance.status === "Available" ? "bg-green-50 text-green-700 border-green-200" :
-                        nearestAmbulance.ambulance.status === "En Route" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        nearestAmbulance.ambulance.status === "Deployed" ? "bg-blue-50 text-blue-700 border-blue-200" :
                         "bg-orange-50 text-orange-700 border-orange-200"
                       }`}>{nearestAmbulance.ambulance.status}</span>
                     </div>
@@ -608,7 +608,7 @@ export default function RiskMapsPage() {
                       <span className="font-bold text-gray-800">{nearestRescueTeam.distance.toFixed(1)} km away</span>
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
                         nearestRescueTeam.rescueTeam.status === "Available" ? "bg-green-50 text-green-700 border-green-200" :
-                        nearestRescueTeam.rescueTeam.status === "En Route" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        nearestRescueTeam.rescueTeam.status === "Deployed" ? "bg-blue-50 text-blue-700 border-blue-200" :
                         "bg-orange-50 text-orange-700 border-orange-200"
                       }`}>{nearestRescueTeam.rescueTeam.status}</span>
                     </div>

@@ -106,9 +106,11 @@ class MockQueryBuilder {
             location_name: "Velachery Lowlands",
             latitude: 12.9801,
             longitude: 80.2224,
-            status: "open",
+            status: "Pending",
             created_by: "system-user-id",
-            created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+            created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+            assigned_resources: [],
+            assigned_rescue_teams: []
           },
           {
             id: "inc-2",
@@ -118,9 +120,11 @@ class MockQueryBuilder {
             location_name: "Tambaram West Depot",
             latitude: 12.9249,
             longitude: 80.1011,
-            status: "investigating",
+            status: "In Progress",
             created_by: "system-user-id",
-            created_at: new Date(Date.now() - 3600000 * 4).toISOString()
+            created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+            assigned_resources: [],
+            assigned_rescue_teams: []
           },
           {
             id: "inc-3",
@@ -130,9 +134,11 @@ class MockQueryBuilder {
             location_name: "T Nagar Industrial Block",
             latitude: 13.0418,
             longitude: 80.2341,
-            status: "resolved",
+            status: "Resolved",
             created_by: "system-user-id",
-            created_at: new Date(Date.now() - 3600000 * 24).toISOString()
+            created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+            assigned_resources: [],
+            assigned_rescue_teams: []
           }
         ];
       } else if (this.tableName === 'alerts') {
@@ -162,44 +168,52 @@ class MockQueryBuilder {
             id: "sh-1",
             name: "Chennai Community Shelter",
             address: "Velachery Main Rd",
+            location: "Velachery Main Rd",
             latitude: 12.9790,
             longitude: 80.2210,
             capacity: 500,
             occupied: 320,
-            status: "Available",
+            status: "Active",
+            contact: "+91 98765 43210",
             created_at: new Date(Date.now() - 3600000 * 5).toISOString()
           },
           {
             id: "sh-2",
             name: "Trichy Relief Center",
             address: "Cantonment, Trichy",
+            location: "Cantonment, Trichy",
             latitude: 10.8050,
             longitude: 78.6856,
             capacity: 300,
             occupied: 150,
-            status: "Available",
+            status: "Active",
+            contact: "+91 98765 43211",
             created_at: new Date(Date.now() - 3600000 * 10).toISOString()
           },
           {
             id: "sh-3",
             name: "Kallakurichi Government Shelter",
             address: "Kachirapalayam Rd",
+            location: "Kachirapalayam Rd",
             latitude: 11.7380,
             longitude: 78.9620,
             capacity: 250,
             occupied: 250,
             status: "Full",
+            contact: "+91 98765 43212",
             created_at: new Date(Date.now() - 3600000 * 20).toISOString()
           },
           {
             id: "sh-4",
             name: "Tambaram Emergency Hall",
             address: "Tambaram West",
+            location: "Tambaram West",
             latitude: 12.9260,
             longitude: 80.1000,
             capacity: 400,
             occupied: 0,
-            status: "Maintenance",
+            status: "Closed",
+            contact: "+91 98765 43213",
             created_at: new Date(Date.now() - 3600000 * 30).toISOString()
           }
         ];
@@ -213,6 +227,8 @@ class MockQueryBuilder {
             latitude: 12.9780,
             longitude: 80.2230,
             status: "Available",
+            capacity: 2,
+            contact: "+91 99999 11111",
             created_at: new Date(Date.now() - 3600000 * 2).toISOString()
           },
           {
@@ -222,7 +238,9 @@ class MockQueryBuilder {
             location: "Guindy Depot",
             latitude: 13.0067,
             longitude: 80.2206,
-            status: "En Route",
+            status: "Deployed",
+            capacity: 2,
+            contact: "+91 99999 22222",
             created_at: new Date(Date.now() - 3600000 * 5).toISOString()
           },
           {
@@ -233,6 +251,8 @@ class MockQueryBuilder {
             latitude: 13.0012,
             longitude: 80.2565,
             status: "Deployed",
+            capacity: 10,
+            contact: "+91 99999 33333",
             created_at: new Date(Date.now() - 3600000 * 12).toISOString()
           },
           {
@@ -243,6 +263,8 @@ class MockQueryBuilder {
             latitude: 12.9230,
             longitude: 80.1100,
             status: "Available",
+            capacity: 8,
+            contact: "+91 99999 44444",
             created_at: new Date(Date.now() - 3600000 * 18).toISOString()
           },
           {
@@ -253,16 +275,20 @@ class MockQueryBuilder {
             latitude: 13.0827,
             longitude: 80.2707,
             status: "Available",
+            capacity: 10000,
+            contact: "+91 99999 55555",
             created_at: new Date(Date.now() - 3600000 * 24).toISOString()
           },
           {
             id: "res-6",
             name: "Fire Response Unit",
-            type: "Fire Unit",
+            type: "Fire Service",
             location: "Anna Nagar",
             latitude: 13.0850,
             longitude: 80.2100,
             status: "Available",
+            capacity: 6,
+            contact: "+91 99999 66666",
             created_at: new Date(Date.now() - 3600000 * 36).toISOString()
           }
         ];

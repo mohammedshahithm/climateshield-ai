@@ -7,16 +7,18 @@ export interface Shelter {
   id: string;
   name: string;
   address: string;
+  location: string;
   latitude: number;
   longitude: number;
   capacity: number;
   occupied: number;
-  status: "Available" | "Full" | "Maintenance";
+  contact: string;
+  status: "Active" | "Full" | "Closed";
   created_at: string;
 }
 
-export type ResourceType = "Ambulance" | "Rescue Team" | "Water Tanker" | "Fire Unit" | "Medical Team" | "Food Supply Unit";
-export type ResourceStatus = "Available" | "En Route" | "Deployed" | "Maintenance";
+export type ResourceType = "Ambulance" | "Rescue Team" | "Fire Service" | "Medical Team" | "Relief Camp" | "Water Tanker";
+export type ResourceStatus = "Available" | "Deployed" | "Maintenance";
 
 export interface Resource {
   id: string;
@@ -26,6 +28,8 @@ export interface Resource {
   latitude: number;
   longitude: number;
   status: ResourceStatus;
+  capacity: number;
+  contact: string;
   created_at: string;
 }
 
@@ -130,74 +134,156 @@ export function ResourceShelterProvider({ children }: { children: ReactNode }) {
 
   // Shelters CRUD
   const addShelter = async (newShelter: Omit<Shelter, "id" | "created_at">) => {
-    const { error: insertError } = await supabase.from("shelters").insert(newShelter);
-    if (insertError) {
-      console.error("Error inserting shelter:", insertError);
-      throw insertError;
+    try {
+      const { data, error: insertError } = await supabase
+        .from("shelters")
+        .insert(newShelter)
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error("Error inserting shelter:", insertError);
+        throw insertError;
+      }
+      
+      if (data) {
+        setShelters(prev => {
+          if (prev.some(s => s.id === data.id)) return prev;
+          return [data as Shelter, ...prev];
+        });
+      }
+    } catch (err) {
+      console.error("Failed to add shelter:", err);
+      throw err;
     }
   };
 
   const updateShelter = async (updatedShelter: Shelter) => {
-    const { error: updateError } = await supabase
-      .from("shelters")
-      .update({
-        name: updatedShelter.name,
-        address: updatedShelter.address,
-        latitude: updatedShelter.latitude,
-        longitude: updatedShelter.longitude,
-        capacity: updatedShelter.capacity,
-        occupied: updatedShelter.occupied,
-        status: updatedShelter.status
-      })
-      .eq("id", updatedShelter.id);
+    try {
+      const { data, error: updateError } = await supabase
+        .from("shelters")
+        .update({
+          name: updatedShelter.name,
+          address: updatedShelter.address,
+          location: updatedShelter.location,
+          latitude: updatedShelter.latitude,
+          longitude: updatedShelter.longitude,
+          capacity: updatedShelter.capacity,
+          occupied: updatedShelter.occupied,
+          contact: updatedShelter.contact,
+          status: updatedShelter.status
+        })
+        .eq("id", updatedShelter.id)
+        .select()
+        .single();
 
-    if (updateError) {
-      console.error("Error updating shelter:", updateError);
-      throw updateError;
+      if (updateError) {
+        console.error("Error updating shelter:", updateError);
+        throw updateError;
+      }
+
+      if (data) {
+        setShelters(prev => prev.map(s => (s.id === data.id ? (data as Shelter) : s)));
+      }
+    } catch (err) {
+      console.error("Failed to update shelter:", err);
+      throw err;
     }
   };
 
   const deleteShelter = async (id: string) => {
-    const { error: deleteError } = await supabase.from("shelters").delete().eq("id", id);
-    if (deleteError) {
-      console.error("Error deleting shelter:", deleteError);
-      throw deleteError;
+    try {
+      const { error: deleteError } = await supabase
+        .from("shelters")
+        .delete()
+        .eq("id", id);
+      
+      if (deleteError) {
+        console.error("Error deleting shelter:", deleteError);
+        throw deleteError;
+      }
+
+      setShelters(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.error("Failed to delete shelter:", err);
+      throw err;
     }
   };
 
   // Resources CRUD
   const addResource = async (newResource: Omit<Resource, "id" | "created_at">) => {
-    const { error: insertError } = await supabase.from("resources").insert(newResource);
-    if (insertError) {
-      console.error("Error inserting resource:", insertError);
-      throw insertError;
+    try {
+      const { data, error: insertError } = await supabase
+        .from("resources")
+        .insert(newResource)
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error("Error inserting resource:", insertError);
+        throw insertError;
+      }
+
+      if (data) {
+        setResources(prev => {
+          if (prev.some(r => r.id === data.id)) return prev;
+          return [data as Resource, ...prev];
+        });
+      }
+    } catch (err) {
+      console.error("Failed to add resource:", err);
+      throw err;
     }
   };
 
   const updateResource = async (updatedResource: Resource) => {
-    const { error: updateError } = await supabase
-      .from("resources")
-      .update({
-        name: updatedResource.name,
-        type: updatedResource.type,
-        location: updatedResource.location,
-        latitude: updatedResource.latitude,
-        longitude: updatedResource.longitude,
-        status: updatedResource.status
-      })
-      .eq("id", updatedResource.id);
+    try {
+      const { data, error: updateError } = await supabase
+        .from("resources")
+        .update({
+          name: updatedResource.name,
+          type: updatedResource.type,
+          location: updatedResource.location,
+          latitude: updatedResource.latitude,
+          longitude: updatedResource.longitude,
+          status: updatedResource.status,
+          capacity: updatedResource.capacity,
+          contact: updatedResource.contact
+        })
+        .eq("id", updatedResource.id)
+        .select()
+        .single();
 
-    if (updateError) {
-      console.error("Error updating resource:", updateError);
-      throw updateError;
+      if (updateError) {
+        console.error("Error updating resource:", updateError);
+        throw updateError;
+      }
+
+      if (data) {
+        setResources(prev => prev.map(r => (r.id === data.id ? (data as Resource) : r)));
+      }
+    } catch (err) {
+      console.error("Failed to update resource:", err);
+      throw err;
     }
   };
 
   const deleteResource = async (id: string) => {
-    const { error: deleteError } = await supabase.from("resources").delete().eq("id", id);
-    if (deleteError) {
-      console.error("Error deleting resource:", deleteError);
-      throw deleteError;
+    try {
+      const { error: deleteError } = await supabase
+        .from("resources")
+        .delete()
+        .eq("id", id);
+      
+      if (deleteError) {
+        console.error("Error deleting resource:", deleteError);
+        throw deleteError;
+      }
+
+      setResources(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      console.error("Failed to delete resource:", err);
+      throw err;
     }
   };
 

@@ -15,10 +15,39 @@ import {
   Clock,
   MapPin,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from "lucide-react";
 import { ClimateAlert, Severity, AlertCategory } from "@/lib/mockAlerts";
 import { useAlerts } from "@/lib/AlertsContext";
+import toast from "react-hot-toast";
+
+const exportToCSV = (data: any[], filename: string) => {
+  if (data.length === 0) {
+    toast.error("No data to export.");
+    return;
+  }
+  const headers = Object.keys(data[0]).join(",");
+  const rows = data.map(row => 
+    Object.values(row).map(val => {
+      let str = String(val).replace(/"/g, '""');
+      if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+        str = `"${str}"`;
+      }
+      return str;
+    }).join(",")
+  );
+  const csvContent = [headers, ...rows].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast.success("CSV exported successfully!");
+};
 
 export default function AlertsPage() {
   const { alerts: mockAlerts, loading, error } = useAlerts();
@@ -95,6 +124,24 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Climate Alerts</h1>
           <p className="text-sm text-gray-500">Real-time localized emergency and advisory notices.</p>
         </div>
+        <button
+          onClick={() => {
+            const dataToExport = filteredAlerts.map(a => ({
+              ID: a.id,
+              Title: a.title,
+              Category: a.category,
+              Severity: a.severity,
+              Area: a.area,
+              Status: a.status,
+              Timestamp: a.timestamp,
+              Description: a.description
+            }));
+            exportToCSV(dataToExport, `ClimateShield_Alerts_${new Date().toISOString().split("T")[0]}.csv`);
+          }}
+          className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-gray-300 flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
+        >
+          <FileText className="h-4 w-4 text-gray-400" /> Export Alerts CSV
+        </button>
       </div>
 
       {/* Error / Cache Notice */}

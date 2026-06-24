@@ -22,10 +22,175 @@ import { createClient } from "@/lib/supabase/client";
 
 // Helper to format chatbot message markdown-like elements into HTML safely
 function formatMessageText(text: string): string {
-  let html = text.replace(/\n/g, "<br/>");
-  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/•\s*(.*?)(?:<br\/>|$)/g, '<div class="flex gap-1.5 items-start pl-2 mb-1"><span>•</span><span>$1</span></div>');
-  html = html.replace(/###\s*(.*?)(?:<br\/>|$)/g, '<h4 class="text-sm font-bold text-gray-900 mt-2 mb-1">$1</h4>');
+  if (!text.includes("###") && !text.includes("**")) {
+    return text.replace(/\n/g, "<br/>");
+  }
+
+  let html = "";
+  const lines = text.split("\n");
+  
+  let currentCard: "weather" | "flood" | "aqi" | "risk" | "recs" | null = null;
+  let cardContent: string[] = [];
+
+  const closeCard = () => {
+    if (!currentCard) return "";
+    let cardHtml = "";
+    
+    if (currentCard === "weather") {
+      cardHtml = `
+        <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3.5 my-3 shadow-xs">
+          <div class="flex items-center gap-2 text-blue-800 font-extrabold text-xs mb-2.5 border-b border-blue-100/50 pb-1.5">
+            <svg class="h-4 w-4 text-blue-500 fill-blue-100/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+            <span>WEATHER TELEMETRY</span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] text-gray-700">
+            ${cardContent.join("")}
+          </div>
+        </div>
+      `;
+    } else if (currentCard === "flood") {
+      cardHtml = `
+        <div class="bg-cyan-50/50 border border-cyan-100 rounded-xl p-3.5 my-3 shadow-xs">
+          <div class="flex items-center gap-2 text-cyan-800 font-extrabold text-xs mb-2.5 border-b border-cyan-100/50 pb-1.5">
+            <svg class="h-4 w-4 text-cyan-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0V9a2 2 0 00-2-2H6a2 2 0 00-2 2v4m16 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2v-1"/></svg>
+            <span>FLOOD & WATER CONTROLLER</span>
+          </div>
+          <div class="space-y-1.5 text-[11px] text-gray-700">
+            ${cardContent.join("")}
+          </div>
+        </div>
+      `;
+    } else if (currentCard === "aqi") {
+      cardHtml = `
+        <div class="bg-purple-50/50 border border-purple-100 rounded-xl p-3.5 my-3 shadow-xs">
+          <div class="flex items-center gap-2 text-purple-800 font-extrabold text-xs mb-2.5 border-b border-purple-100/50 pb-1.5">
+            <svg class="h-4 w-4 text-purple-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+            <span>AIR QUALITY INDEX (AQI)</span>
+          </div>
+          <div class="space-y-1.5 text-[11px] text-gray-700">
+            ${cardContent.join("")}
+          </div>
+        </div>
+      `;
+    } else if (currentCard === "risk") {
+      cardHtml = `
+        <div class="bg-rose-50/50 border border-rose-100 rounded-xl p-3.5 my-3 shadow-xs">
+          <div class="flex items-center gap-2 text-rose-800 font-extrabold text-xs mb-2.5 border-b border-rose-100/50 pb-1.5">
+            <svg class="h-4 w-4 text-rose-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span>COMPOSITE RISK PROFILE</span>
+          </div>
+          <div class="space-y-1.5 text-[11px] text-gray-700">
+            ${cardContent.join("")}
+          </div>
+        </div>
+      `;
+    } else if (currentCard === "recs") {
+      cardHtml = `
+        <div class="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 my-3 shadow-xs">
+          <div class="flex items-center gap-2 text-emerald-800 font-extrabold text-xs mb-2.5 border-b border-emerald-100/50 pb-1.5">
+            <svg class="h-4 w-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>SAFETY RECOMMENDATIONS</span>
+          </div>
+          <div class="space-y-2 text-[11px] text-gray-700">
+            ${cardContent.join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    currentCard = null;
+    cardContent = [];
+    return cardHtml;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.startsWith("###")) {
+      html += closeCard();
+      const title = line.replace(/###/g, "").trim();
+      html += `
+        <div class="bg-gradient-to-r from-primary-600 to-indigo-600 text-white rounded-xl p-3.5 mb-4 shadow-sm">
+          <div class="flex items-center gap-2">
+            <svg class="h-4 w-4 text-white animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            <span class="font-extrabold text-[9px] tracking-widest uppercase">Climate Intel Board</span>
+          </div>
+          <h4 class="text-sm font-black mt-1 leading-snug">${title}</h4>
+        </div>
+      `;
+      continue;
+    }
+
+    if (line.includes("**Weather**:")) {
+      html += closeCard();
+      currentCard = "weather";
+      continue;
+    } else if (line.includes("**Flood**:")) {
+      html += closeCard();
+      currentCard = "flood";
+      continue;
+    } else if (line.includes("**Air Quality**:")) {
+      html += closeCard();
+      currentCard = "aqi";
+      continue;
+    } else if (line.includes("**Composite Risk**:")) {
+      html += closeCard();
+      currentCard = "risk";
+      continue;
+    } else if (line.includes("**Recommendations**:")) {
+      html += closeCard();
+      currentCard = "recs";
+      continue;
+    }
+
+    const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-gray-900">$1</strong>');
+
+    if (line.startsWith("•") || line.startsWith("-")) {
+      const content = line.substring(1).trim().replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-gray-900">$1</strong>');
+      if (currentCard) {
+        if (currentCard === "weather") {
+          const colonIdx = content.indexOf(":");
+          if (colonIdx !== -1) {
+            const key = content.substring(0, colonIdx).trim();
+            const val = content.substring(colonIdx + 1).trim();
+            cardContent.push(`
+              <div class="flex justify-between items-center py-1.5 border-b border-gray-100/50">
+                <span class="text-gray-400 font-semibold">${key}:</span>
+                <span class="font-extrabold text-gray-900">${val}</span>
+              </div>
+            `);
+          } else {
+            cardContent.push(`<div class="col-span-2 py-0.5 font-medium">${content}</div>`);
+          }
+        } else if (currentCard === "recs") {
+          cardContent.push(`
+            <div class="flex gap-2 items-start">
+              <span class="mt-0.5 text-emerald-500 font-extrabold">✓</span>
+              <span class="leading-relaxed font-medium text-gray-700">${content}</span>
+            </div>
+          `);
+        } else {
+          cardContent.push(`
+            <div class="flex gap-1.5 items-start py-0.5">
+              <span class="text-gray-400">•</span>
+              <span class="leading-relaxed font-medium">${content}</span>
+            </div>
+          `);
+        }
+      } else {
+        html += `<div class="flex gap-1.5 items-start pl-2 mb-1.5"><span class="text-gray-400">•</span><span class="leading-relaxed font-medium text-gray-700">${content}</span></div>`;
+      }
+    } else {
+      if (currentCard) {
+        cardContent.push(`<p class="leading-relaxed py-0.5 font-medium">${formattedLine}</p>`);
+      } else {
+        html += `<p class="leading-relaxed mb-2 text-gray-700 font-medium">${formattedLine}</p>`;
+      }
+    }
+  }
+
+  html += closeCard();
   return html;
 }
 

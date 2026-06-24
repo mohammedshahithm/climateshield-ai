@@ -6,7 +6,7 @@ import {
   MapPin, 
   ActivitySquare, CloudRain, Wind, ThermometerSun,
   Droplets, ArrowRight, Siren, PhoneCall, Sun, FileX, CloudLightning,
-  Cloud, CloudSnow, Home, Ambulance, Droplet, Brain, Send
+  Cloud, CloudSnow, Home, Ambulance, Droplet, Brain, Send, FileText, Loader2
 } from "lucide-react";
 import { useAlerts } from "@/lib/AlertsContext";
 import { AlertCategory, Severity } from "@/lib/mockAlerts";
@@ -17,6 +17,7 @@ import { useWeather } from "@/hooks/useWeather";
 import { useAirQuality } from "@/hooks/useAirQuality";
 import { useFloodRisk } from "@/hooks/useFloodRisk";
 import { useLocation } from "@/providers/LocationContext";
+import jsPDF from "jspdf";
 
 const WeatherIconMap = {
   Sun: Sun,
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isEvacuationModalOpen, setIsEvacuationModalOpen] = useState(false);
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
   
   const { alerts, location, loading: alertsLoading } = useAlerts();
   const { shelters, resources, loading: resourceShelterLoading } = useResourceShelters();
@@ -46,7 +48,7 @@ export default function DashboardPage() {
   );
 
   const totalShelters = shelters.length;
-  const availableShelters = shelters.filter(s => s.status === "Available").length;
+  const availableShelters = shelters.filter(s => s.status === "Active").length;
   const totalCapacity = shelters.reduce((acc, s) => acc + s.capacity, 0);
   const occupiedCapacity = shelters.reduce((acc, s) => acc + s.occupied, 0);
 
@@ -111,6 +113,121 @@ export default function DashboardPage() {
       heatWaveTextClass = "text-green-600";
     }
   }
+
+  const handleExportPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+      const doc = new jsPDF();
+      const dateStr = new Date().toISOString().split("T")[0];
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(30, 58, 138); // Deep Blue
+      doc.text("ClimateShield AI", 14, 20);
+      
+      doc.setFontSize(14);
+      doc.setTextColor(50, 50, 50);
+      doc.text(`Climate Summary Report for ${location}`, 14, 30);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(120, 120, 120);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 38);
+      doc.text(`Region Coordinates: ${latitude?.toFixed(4) ?? "0.0"}°N, ${longitude?.toFixed(4) ?? "0.0"}°E`, 14, 44);
+      
+      // Divider
+      doc.setDrawColor(200, 200, 200);
+      doc.line(14, 48, 196, 48);
+      
+      // Section 1: Telemetry Data
+      doc.setFontSize(14);
+      doc.setTextColor(30, 58, 138);
+      doc.text("Current Telemetry Sensors", 14, 58);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(60, 60, 60);
+      doc.text(`• Temperature: ${weather ? weather.temperature : "N/A"}°F`, 16, 66);
+      doc.text(`• Condition: ${weather ? weather.condition : "N/A"}`, 16, 72);
+      doc.text(`• Humidity: ${weather ? weather.humidity : "N/A"}%`, 16, 78);
+      doc.text(`• Wind Speed: ${weather ? weather.windSpeed : "N/A"} mph ${weather ? weather.windDirection : ""}`, 16, 84);
+      
+      doc.text(`• Ambient Air Quality: ${airQuality ? airQuality.usAqi : "N/A"} AQI (${airQuality ? airQuality.status : "N/A"})`, 16, 92);
+      doc.text(`• PM2.5 Level: ${airQuality ? airQuality.pm25 : "N/A"} ug/m3`, 16, 98);
+      doc.text(`• PM10 Level: ${airQuality ? airQuality.pm10 : "N/A"} ug/m3`, 16, 104);
+      
+      doc.text(`• Regional Flood Probability: ${floodRisk ? floodRisk.score : "N/A"}% (${floodRisk ? floodRisk.status : "N/A"})`, 16, 112);
+      doc.text(`• Soil Reasoning: ${floodRisk ? floodRisk.reasoning : "N/A"}`, 16, 118);
+      
+      // Divider
+      doc.line(14, 126, 196, 126);
+      
+      // Section 2: AI Predictive Analysis
+      doc.setFontSize(14);
+      doc.setTextColor(30, 58, 138);
+      doc.text("AI Risk & Vulnerability Analysis", 14, 136);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(60, 60, 60);
+      doc.text(`• Composite Climate Risk Score: ${compositeScore} / 100`, 16, 144);
+      doc.text(`• Environmental Threat Classification: ${compositeLevel} Risk`, 16, 150);
+      doc.text(`• Vulnerability Index: ${(compositeScore / 10).toFixed(1)} / 10.0`, 16, 156);
+      
+      // Divider
+      doc.line(14, 164, 196, 164);
+      
+      // Section 3: Shelters & Resources
+      doc.setFontSize(14);
+      doc.setTextColor(30, 58, 138);
+      doc.text("Resource & Shelter Telemetry", 14, 174);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(60, 60, 60);
+      doc.text(`• Emergency Shelters Active: ${availableShelters} of ${totalShelters}`, 16, 182);
+      doc.text(`• Total Occupancy Utilization: ${occupiedCapacity} / ${totalCapacity} spaces (${totalCapacity > 0 ? Math.round((occupiedCapacity/totalCapacity)*100) : 0}%)`, 16, 188);
+      doc.text(`• Available Ambulances: ${ambulancesAvailable}`, 16, 194);
+      doc.text(`• Active Rescue Teams: ${rescueTeamsActive}`, 16, 200);
+      doc.text(`• Available Water Tankers: ${waterTankersAvailable}`, 16, 206);
+      
+      // Divider
+      doc.line(14, 214, 196, 214);
+      
+      // Section 4: Active Warnings
+      doc.setFontSize(14);
+      doc.setTextColor(220, 38, 38); // Red for warnings
+      doc.text("Active Safety Warnings", 14, 224);
+      
+      doc.setFontSize(11);
+      doc.setTextColor(60, 60, 60);
+      const activeAlertList = alerts.filter(a => a.status === "Active");
+      if (activeAlertList.length === 0) {
+        doc.text("No active safety warnings are logged for this location at present.", 16, 232);
+      } else {
+        let warningY = 232;
+        activeAlertList.slice(0, 2).forEach((alert, i) => {
+          doc.setFontSize(11);
+          doc.setTextColor(220, 38, 38);
+          doc.text(`${i+1}. ${alert.title} [${alert.severity} Severity]`, 16, warningY);
+          doc.setFontSize(9);
+          doc.setTextColor(80, 80, 80);
+          const splitDesc = doc.splitTextToSize(alert.description, 170);
+          doc.text(splitDesc, 18, warningY + 5);
+          warningY += 5 + (splitDesc.length * 4) + 3;
+        });
+      }
+      
+      // Footer text
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text("Generated by ClimateShield AI • Government-Grade Operations Dashboard • Version 1.2.0-prod", 14, 285);
+      
+      doc.save(`ClimateShield_${location}_Report_${dateStr}.pdf`);
+      toast.success("Climate report PDF generated successfully!");
+    } catch (err) {
+      console.error("PDF Export error:", err);
+      toast.error("Failed to export PDF report");
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
 
   useEffect(() => {
     // Simulate data loading
@@ -179,6 +296,23 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">Citizen Dashboard</h1>
           <p className="text-sm text-gray-500">Real-time climate intelligence for your area.</p>
         </div>
+        <button
+          onClick={handleExportPDF}
+          disabled={isExportingPDF}
+          className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-gray-300 flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isExportingPDF ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
+              <span>Generating Report...</span>
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4 text-gray-400" />
+              <span>Export Climate Report</span>
+            </>
+          )}
+        </button>
       </div>
 
       {/* Emergency Warning Banner */}

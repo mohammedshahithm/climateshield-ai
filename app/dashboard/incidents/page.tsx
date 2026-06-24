@@ -14,12 +14,40 @@ import {
   Clock, 
   Filter, 
   RefreshCw,
-  Info
+  Info,
+  FileText
 } from "lucide-react";
 import { useAuthContext } from "@/providers/AuthProvider";
 import { useLocation } from "@/providers/LocationContext";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
+
+const exportToCSV = (data: any[], filename: string) => {
+  if (data.length === 0) {
+    toast.error("No data to export.");
+    return;
+  }
+  const headers = Object.keys(data[0]).join(",");
+  const rows = data.map(row => 
+    Object.values(row).map(val => {
+      let str = String(val).replace(/"/g, '""');
+      if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+        str = `"${str}"`;
+      }
+      return str;
+    }).join(",")
+  );
+  const csvContent = [headers, ...rows].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast.success("CSV exported successfully!");
+};
 
 interface Incident {
   id: string;
@@ -176,7 +204,7 @@ export default function IncidentsPage() {
           latitude: parseFloat(latitude),
           longitude: parseFloat(longitude),
           location_name: locationName.trim(),
-          status: "open"
+          status: "Pending"
         });
 
       if (error) {
@@ -248,7 +276,10 @@ export default function IncidentsPage() {
   const getStatusColors = (status: string) => {
     switch (status.toLowerCase()) {
       case "pending":
+      case "open":
         return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "assigned":
+        return "bg-indigo-100 text-indigo-800 border-indigo-200";
       case "resolved":
         return "bg-green-100 text-green-800 border-green-200";
       case "in progress":
@@ -271,9 +302,30 @@ export default function IncidentsPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Citizen Incident Reporting</h1>
-        <p className="text-sm text-gray-500">Report climate-related emergencies or monitor recent community reports.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Citizen Incident Reporting</h1>
+          <p className="text-sm text-gray-500">Report climate-related emergencies or monitor recent community reports.</p>
+        </div>
+        <button
+          onClick={() => {
+            const dataToExport = filteredIncidents.map(inc => ({
+              ID: inc.id,
+              Title: inc.title,
+              Category: inc.category,
+              LocationName: inc.location_name,
+              Latitude: inc.latitude,
+              Longitude: inc.longitude,
+              Status: inc.status,
+              CreatedAt: inc.created_at,
+              Description: inc.description
+            }));
+            exportToCSV(dataToExport, `ClimateShield_Incidents_${new Date().toISOString().split("T")[0]}.csv`);
+          }}
+          className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 hover:border-gray-300 flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-98"
+        >
+          <FileText className="h-4 w-4 text-gray-400" /> Export Incidents CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -492,6 +544,7 @@ export default function IncidentsPage() {
               >
                 <option value="All">All Statuses</option>
                 <option value="pending">Pending</option>
+                <option value="assigned">Assigned</option>
                 <option value="in progress">In Progress</option>
                 <option value="resolved">Resolved</option>
               </select>

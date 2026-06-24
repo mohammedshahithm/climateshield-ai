@@ -39,6 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
   const locationRef = useRef<HTMLDivElement>(null);
@@ -193,6 +194,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link href="/" className="flex items-center gap-2 text-white">
               <ShieldAlert className="h-6 w-6 text-primary-400" />
               <span className="font-bold text-lg tracking-tight">ClimateShield</span>
+              <span className="text-[9px] font-bold bg-primary-500/20 text-primary-400 px-1.5 py-0.5 rounded-full ml-1 select-none">v1.2.0</span>
             </Link>
             <button onClick={() => setSidebarOpen(false)} className="text-secondary-200 hover:text-white">
               <X className="h-6 w-6" />
@@ -233,6 +235,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/" className="flex items-center gap-2 text-white">
             <ShieldAlert className="h-6 w-6 text-primary-400" />
             <span className="font-bold text-lg tracking-tight">ClimateShield</span>
+            <span className="text-[9px] font-bold bg-primary-500/20 text-primary-400 px-1.5 py-0.5 rounded-full ml-1 select-none">v1.2.0</span>
           </Link>
         </div>
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
@@ -544,7 +547,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <button 
                       onClick={() => {
                         setProfileMenuOpen(false);
-                        toast("Help Center is coming soon!");
+                        setHelpModalOpen(true);
                       }} 
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
                     >
@@ -630,6 +633,76 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   Edit in Settings
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Help Center Modal */}
+      {helpModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-secondary-900/60 backdrop-blur-sm" onClick={() => setHelpModalOpen(false)}></div>
+          <div className="bg-white rounded-2xl w-full max-w-lg relative z-10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <HelpCircle className="h-5 w-5 text-primary-500" /> ClimateShield Help Center
+              </h3>
+              <button onClick={() => setHelpModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto">
+              <div className="space-y-2">
+                <h4 className="font-bold text-sm text-gray-900">1. Switching Roles for Faculty Evaluation</h4>
+                <p className="text-xs text-gray-550 leading-relaxed">
+                  You can toggle between the <strong>Citizen</strong> and <strong>Admin</strong> views instantly using the role switcher at the bottom-left of the sidebar. In the Admin view, you will gain access to the Command Center and Database Seeding tools.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-sm text-gray-900">2. Real-Time Telemetry and Risk Scoring</h4>
+                <p className="text-xs text-gray-550 leading-relaxed">
+                  ClimateShield calculates a composite risk index from 0 to 100 based on live weather data, flood forecasts, and air pollution sensors. This score represents localized environmental vulnerability for the active location.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-sm text-gray-900">3. Citizen Incident Reporting</h4>
+                <p className="text-xs text-gray-550 leading-relaxed">
+                  Citizens can report active environmental threats (like fires, waterlogging, or power cuts) by navigating to the <strong>Incidents</strong> tab. Enter coordinates, title, and descriptions to pin it to the map.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-sm text-gray-900">4. Emergency Telephone Directory</h4>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Disaster Helpline</p>
+                    <p className="text-sm font-bold text-red-655 mt-1">1070</p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Emergency Service</p>
+                    <p className="text-sm font-bold text-red-655 mt-1">112</p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Medical Support</p>
+                    <p className="text-sm font-bold text-red-655 mt-1">108</p>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase">Health Advisory</p>
+                    <p className="text-sm font-bold text-red-655 mt-1">104</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button 
+                onClick={() => setHelpModalOpen(false)}
+                className="px-5 py-2 bg-white border border-gray-250 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition-colors text-xs"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
