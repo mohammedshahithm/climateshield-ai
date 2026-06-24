@@ -304,3 +304,131 @@ export async function geocodeAddress(query: string): Promise<GeocodeResult | nul
     throw error;
   }
 }
+
+export async function fetchConsolidatedDataByCity(city: string): Promise<any> {
+  if (typeof window === "undefined") {
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENWEATHER_API_KEY is not configured on the server");
+    }
+    const currentUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=imperial`;
+    const currentRes = await fetch(currentUrl);
+    if (currentRes.status === 404) {
+      throw new Error("City not found");
+    }
+    if (!currentRes.ok) {
+      throw new Error(`Current weather API error: ${currentRes.status} ${currentRes.statusText}`);
+    }
+    const current = await currentRes.json();
+    const lat = current.coord.lat;
+    const lon = current.coord.lon;
+
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`;
+    const airQualityUrl = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${apiKey}`;
+
+    const [forecastRes, airQualityRes] = await Promise.all([
+      fetch(forecastUrl),
+      fetch(airQualityUrl),
+    ]);
+
+    if (!forecastRes.ok || !airQualityRes.ok) {
+      throw new Error("Failed to fetch from OpenWeather APIs on server");
+    }
+
+    const forecast = await forecastRes.json();
+    const airQuality = await airQualityRes.json();
+
+    return { current, forecast, airQuality };
+  }
+
+  const cacheKey = `city_${city.toLowerCase().trim()}`;
+  const storageKey = `weather_cache_${cacheKey}`;
+
+  // 1. Check client cache
+  const cached = getCachedData<any>(storageKey);
+  if (cached) {
+    return cached;
+  }
+
+  // 2. Check pending requests
+  if (pendingRequests.has(cacheKey)) {
+    return pendingRequests.get(cacheKey)!;
+  }
+
+  // 3. Fetch from route proxy
+  const promise = (async () => {
+    try {
+      const url = `/api/weather?city=${encodeURIComponent(city)}`;
+      const res = await fetch(url);
+      if (res.status === 404) {
+        throw new Error("City not found");
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to fetch consolidated weather data: ${res.statusText}`);
+      }
+      const data = await res.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      setCachedData(storageKey, data);
+      return data;
+    } finally {
+      pendingRequests.delete(cacheKey);
+    }
+  })();
+
+  pendingRequests.set(cacheKey, promise);
+  return promise;
+}
+
+export async function fetchWeatherByCity(city: string): Promise<WeatherData> {
+  const data = await fetchConsolidatedDataByCity(city);
+  const current = data.current;
+  const forecast = data.forecast;
+
+  if (!current || !forecast || !forecast.list) {
+    throw new Error("Invalid response format from weather API");
+  }
+
+  const weatherCode = current.weather[0].id;
+  const { condition, iconName } = getWeatherDetails(weatherCode);
+
+  const locationName = current.name ? `${current.name}, ${current.sys.country}` : city;
+
+  // Tomorrow is 24h later (index 8 in 3-hourly forecast)
+  const tomorrowItem = forecast.list.length > 8 ? forecast.list[8] : (forecast.list.length > 0 ? forecast.list[0] : null);
+  const tomorrowTemp = tomorrowItem ? Math.round(tomorrowItem.main.temp) : Math.round(current.main.temp - 5);
+  const tomorrowCode = tomorrowItem ? tomorrowItem.weather[0].id : 800;
+  const { condition: tomorrowCondition, iconName: tomorrowIconName } = getWeatherDetails(tomorrowCode);
+
+  // Compute today's max and min temp from the first 8 items of forecast (next 24 hours)
+  let todayMaxTemp = current.main.temp_max;
+  let todayMinTemp = current.main.temp_min;
+  const first24h = forecast.list.slice(0, 8);
+  if (first24h.length > 0) {
+    todayMaxTemp = Math.max(...first24h.map((item: any) => item.main.temp_max));
+    todayMinTemp = Math.min(...first24h.map((item: any) => item.main.temp_min));
+  }
+
+  return {
+    temperature: Math.round(current.main.temp),
+    humidity: current.main.humidity,
+    windSpeed: Math.round(current.wind.speed),
+    windDirection: getWindDirection(current.wind.deg),
+    weatherCode,
+    condition,
+    iconName,
+    locationName,
+    tomorrowTemperature: Math.round(tomorrowTemp),
+    tomorrowWeatherCode: tomorrowCode,
+    tomorrowCondition,
+    tomorrowIconName,
+    latitude: current.coord.lat,
+    longitude: current.coord.lon,
+    todayMaxTemp: Math.round(todayMaxTemp),
+    todayMinTemp: Math.round(todayMinTemp),
+    pressure: current.main.pressure,
+    visibility: current.visibility
+  };
+}
+

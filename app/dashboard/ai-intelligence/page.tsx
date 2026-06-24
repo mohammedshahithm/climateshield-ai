@@ -15,9 +15,9 @@ import { useLocation } from "@/providers/LocationContext";
 import { useWeather } from "@/hooks/useWeather";
 import { useAirQuality } from "@/hooks/useAirQuality";
 import { useFloodRisk } from "@/hooks/useFloodRisk";
-import { fetchWeather, geocodeAddress, fetchConsolidatedData, getWeatherDetails } from "@/lib/weather";
-import { fetchAirQuality } from "@/lib/airQuality";
-import { fetchFloodRisk } from "@/lib/floodRisk";
+import { fetchWeather, fetchWeatherByCity, fetchConsolidatedData, getWeatherDetails } from "@/lib/weather";
+import { fetchAirQuality, fetchAirQualityByCity } from "@/lib/airQuality";
+import { fetchFloodRisk, fetchFloodRiskByCity } from "@/lib/floodRisk";
 import { createClient } from "@/lib/supabase/client";
 
 // Helper to format chatbot message markdown-like elements into HTML safely
@@ -83,6 +83,69 @@ const AIForecastMap = dynamic(() => import("@/components/maps/AIForecastMap"), {
   ssr: false,
   loading: () => <div className="h-full w-full min-h-[400px] bg-gray-50 rounded-xl animate-pulse flex items-center justify-center border border-gray-100 text-gray-400 font-medium">Initializing AI Map Engine...</div>
 });
+
+const NICKNAME_MAPPINGS: Record<string, string> = {
+  trichy: "Tiruchirappalli",
+  banglore: "Bangalore",
+  bombay: "Mumbai",
+  madras: "Chennai"
+};
+
+function extractCityCandidate(text: string): string | null {
+  const cleanText = text.replace(/[?.!,]/g, " ").trim();
+  const words = cleanText.split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return null;
+
+  const ignoreSet = new Set([
+    "how", "is", "the", "weather", "in", "at", "for", "on", "what", "danger", "safe", "safety", 
+    "risk", "today", "tomorrow", "forecast", "climate", "report", "show", "me", "tell", "about", 
+    "current", "status", "any", "alerts", "a", "an", "of", "will", "this", "week", "risky", 
+    "city", "please", "give", "info", "information", "data", "temp", "temperature", "flood", 
+    "flooding", "aqi", "air", "quality", "pollution", "hazard", "hazards", "alert", "alerts", 
+    "warning", "warnings", "shelter", "shelters", "to", "and", "or", "with", "from", "was",
+    "were", "are", "do", "does", "did", "can", "could", "would", "should", "you", "your",
+    "my", "i", "we", "he", "she", "it", "they", "them"
+  ]);
+
+  // 1. Check nicknames first (Trichy, Banglore, Bombay, Madras)
+  for (const word of words) {
+    const cleanWord = word.trim().toLowerCase();
+    if (NICKNAME_MAPPINGS[cleanWord]) {
+      return word; // return the nickname token itself so we can do mapping & note prepending
+    }
+  }
+
+  // 2. Try preposition pattern match on cleanText
+  // E.g. "in xyz123" -> extracts "xyz123"
+  const prepRegex = /(?:in|is|will|at|for|about|safety of|to|from)\s+(\S+)/i;
+  const match = cleanText.match(prepRegex);
+  if (match && match[1]) {
+    const firstWord = match[1].replace(/[?.!,]/g, "").trim();
+    if (firstWord && firstWord.length > 2 && !ignoreSet.has(firstWord.toLowerCase())) {
+      return firstWord;
+    }
+  }
+
+  // 3. Look for capitalized words that are not stop words
+  for (const word of words) {
+    if (word.length > 2 && word[0] === word[0].toUpperCase()) {
+      const lower = word.toLowerCase();
+      if (!ignoreSet.has(lower)) {
+        return word;
+      }
+    }
+  }
+
+  // 4. If it's a single word query and not in ignore list
+  if (words.length === 1) {
+    const singleWord = words[0];
+    if (singleWord.length > 2 && !ignoreSet.has(singleWord.toLowerCase())) {
+      return singleWord;
+    }
+  }
+
+  return null;
+}
 
 interface Message {
   sender: "user" | "ai";
@@ -352,88 +415,66 @@ export default function AiIntelligencePage() {
     const lower = text.toLowerCase();
 
     // Determine which city we are querying
-    let targetCityName = city;
-    let targetLat = latitude;
-    let targetLon = longitude;
-
-    // Predefined coordinate map for reliable local lookups
-    const CITY_COORDINATES: Record<string, { lat: number; lon: number; fullName: string }> = {
-      chennai: { lat: 13.0827, lon: 80.2707, fullName: "Chennai" },
-      kallakurichi: { lat: 11.7380, lon: 78.9639, fullName: "Kallakurichi" },
-      mumbai: { lat: 19.0760, lon: 72.8777, fullName: "Mumbai" },
-      delhi: { lat: 28.7041, lon: 77.1025, fullName: "Delhi" },
-      bangalore: { lat: 12.9716, lon: 77.5946, fullName: "Bangalore" },
-      trichy: { lat: 10.7905, lon: 78.7047, fullName: "Trichy" },
-      tiruchirappalli: { lat: 10.7905, lon: 78.7047, fullName: "Trichy" },
-      hyderabad: { lat: 17.3850, lon: 78.4867, fullName: "Hyderabad" },
-      kolkata: { lat: 22.5726, lon: 88.3639, fullName: "Kolkata" },
-    };
-
-    let matchedKey = "";
-    for (const key of Object.keys(CITY_COORDINATES)) {
-      if (lower.includes(key)) {
-        matchedKey = key;
-        targetCityName = CITY_COORDINATES[key].fullName;
-        targetLat = CITY_COORDINATES[key].lat;
-        targetLon = CITY_COORDINATES[key].lon;
-        break;
-      }
-    }
-
-    // Geocoding fallback if no local match
-    if (!matchedKey) {
-      // Find city name after prepositions or search text
-      const prepositionMatch = text.match(/(?:in|is|will|at|for|about|safety of)\s+([A-Z][a-zA-Z\s]+)/i);
-      let potentialCity = "";
-      if (prepositionMatch && prepositionMatch[1]) {
-        potentialCity = prepositionMatch[1].trim().split(" ")[0];
-      } else {
-        const words = text.split(/\s+/);
-        const lastWord = words[words.length - 1].replace(/[?.!,]/g, "");
-        if (lastWord && lastWord.length > 2 && lastWord[0] === lastWord[0].toUpperCase() && !["today", "safe", "this", "week", "risky", "city", "tomorrow", "forecast", "weather", "risk", "flood", "heatwave"].includes(lastWord.toLowerCase())) {
-          potentialCity = lastWord;
-        }
-      }
-
-      if (potentialCity) {
-        try {
-          const geo = await geocodeAddress(potentialCity);
-          if (geo) {
-            targetCityName = geo.name;
-            targetLat = geo.latitude;
-            targetLon = geo.longitude;
-            matchedKey = "geocoded";
-          } else {
-            setMessages(prev => [...prev, { sender: "ai", text: "Unable to find climate data for this location.", timestamp: new Date() }]);
-            setIsTyping(false);
-            return;
-          }
-        } catch (err) {
-          setMessages(prev => [...prev, { sender: "ai", text: "Unable to find climate data for this location.", timestamp: new Date() }]);
-          setIsTyping(false);
-          return;
-        }
-      } else {
-        // Default to active page city if no city is found in query
-        targetCityName = city;
-        targetLat = latitude;
-        targetLon = longitude;
-      }
-    }
-
-    // 2. Fetch live data
+    let targetCityName = "";
+    let targetLat = 0;
+    let targetLon = 0;
     let weatherData, aqiData, floodData;
-    try {
-      [weatherData, aqiData, floodData] = await Promise.all([
-        fetchWeather(targetLat, targetLon),
-        fetchAirQuality(targetLat, targetLon),
-        fetchFloodRisk(targetLat, targetLon),
-      ]);
-    } catch (apiErr) {
-      console.error("OpenWeather API failed:", apiErr);
-      setMessages(prev => [...prev, { sender: "ai", text: "Weather service temporarily unavailable.", timestamp: new Date() }]);
-      setIsTyping(false);
-      return;
+    let note = "";
+
+    const extractedCity = extractCityCandidate(text);
+
+    if (extractedCity) {
+      // Apply nickname mappings if applicable
+      const cleanWord = extractedCity.toLowerCase();
+      const resolvedCity = NICKNAME_MAPPINGS[cleanWord] || extractedCity;
+
+      if (NICKNAME_MAPPINGS[cleanWord]) {
+        note = `*(Showing results for **${NICKNAME_MAPPINGS[cleanWord]}**, nickname mapping for "${extractedCity}")*\n\n`;
+      }
+
+      // Fetch dynamic weather, AQI, and flood risk directly by city name
+      try {
+        [weatherData, aqiData, floodData] = await Promise.all([
+          fetchWeatherByCity(resolvedCity),
+          fetchAirQualityByCity(resolvedCity),
+          fetchFloodRiskByCity(resolvedCity),
+        ]);
+        targetCityName = weatherData.locationName || resolvedCity;
+        targetLat = weatherData.latitude || 0;
+        targetLon = weatherData.longitude || 0;
+      } catch (err: any) {
+        console.error("OpenWeather city lookup failed:", err);
+        const errorMsg = `Unable to identify the location "${extractedCity}". Please check the spelling and enter a valid city name.`;
+        setMessages(prev => [...prev, { sender: "ai", text: errorMsg, timestamp: new Date() }]);
+        setIsTyping(false);
+
+        // Log details
+        console.log("=== AI Assistant Query Log ===");
+        console.log("User Query:", text);
+        console.log("Extracted City:", extractedCity);
+        console.log("Matched City:", "None");
+        console.log("Intent:", "UNKNOWN");
+        console.log("===============================");
+        return;
+      }
+    } else {
+      // If no city candidate was extracted in the user query, use the active page city context
+      targetCityName = city;
+      targetLat = latitude;
+      targetLon = longitude;
+
+      try {
+        [weatherData, aqiData, floodData] = await Promise.all([
+          fetchWeather(targetLat, targetLon),
+          fetchAirQuality(targetLat, targetLon),
+          fetchFloodRisk(targetLat, targetLon),
+        ]);
+      } catch (apiErr) {
+        console.error("OpenWeather API coordinates lookup failed:", apiErr);
+        setMessages(prev => [...prev, { sender: "ai", text: "Weather service temporarily unavailable.", timestamp: new Date() }]);
+        setIsTyping(false);
+        return;
+      }
     }
 
     // 3. Normalized Risk Scoring Calculations
@@ -510,8 +551,12 @@ export default function AiIntelligencePage() {
       intent = "FULL REPORT";
     }
 
-    console.log("Detected City:", targetCityName);
-    console.log("Detected Intent:", intent);
+    console.log("=== AI Assistant Query Log ===");
+    console.log("User Query:", text);
+    console.log("Extracted City:", extractedCity || "None");
+    console.log("Matched City:", targetCityName);
+    console.log("Intent:", intent);
+    console.log("===============================");
 
     if (intent === "WEATHER") {
       reply = `### Weather Report for ${targetCityName}
@@ -591,6 +636,10 @@ Recommendations:
 • ${recs[0]}
 • ${recs[1]}
 • ${recs[2]}`;
+    }
+
+    if (note) {
+      reply = note + reply;
     }
 
     // 5. Store in Supabase

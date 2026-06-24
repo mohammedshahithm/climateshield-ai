@@ -4,9 +4,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get("lat");
   const lon = searchParams.get("lon");
+  const city = searchParams.get("city");
 
-  if (!lat || !lon) {
-    return NextResponse.json({ error: "Missing coordinates" }, { status: 400 });
+  if (!city && (!lat || !lon)) {
+    return NextResponse.json({ error: "Missing coordinates or city parameter" }, { status: 400 });
   }
 
   const apiKey = process.env.OPENWEATHER_API_KEY;
@@ -15,32 +16,63 @@ export async function GET(request: Request) {
   }
 
   try {
-    const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`;
-    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=imperial`;
-    const airQualityUrl = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${apiKey}`;
+    let resolvedLat = lat;
+    let resolvedLon = lon;
+    let currentData: any = null;
 
-    const [currentRes, forecastRes, airQualityRes] = await Promise.all([
-      fetch(currentUrl),
-      fetch(forecastUrl),
-      fetch(airQualityUrl),
-    ]);
-
-    if (!currentRes.ok) {
-      throw new Error(`Current weather API error: ${currentRes.status} ${currentRes.statusText}`);
-    }
-    if (!forecastRes.ok) {
-      throw new Error(`Forecast API error: ${forecastRes.status} ${forecastRes.statusText}`);
-    }
-    if (!airQualityRes.ok) {
-      throw new Error(`Air pollution API error: ${airQualityRes.status} ${airQualityRes.statusText}`);
+    if (city) {
+      const cityUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=imperial`;
+      const currentRes = await fetch(cityUrl);
+      if (currentRes.status === 404) {
+        return NextResponse.json({ error: "City not found" }, { status: 404 });
+      }
+      if (!currentRes.ok) {
+        throw new Error(`Current weather API error: ${currentRes.status} ${currentRes.statusText}`);
+      }
+      currentData = await currentRes.json();
+      resolvedLat = currentData.coord.lat.toString();
+      resolvedLon = currentData.coord.lon.toString();
     }
 
-    const current = await currentRes.json();
-    const forecast = await forecastRes.json();
-    const airQuality = await airQualityRes.json();
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${resolvedLat}&lon=${resolvedLon}&appid=${apiKey}&units=imperial`;
+    const airQualityUrl = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${resolvedLat}&lon=${resolvedLon}&appid=${apiKey}`;
+
+    const fetchPromises = [];
+
+    if (city && currentData) {
+      fetchPromises.push(
+        Promise.resolve(currentData),
+        fetch(forecastUrl).then(async (res) => {
+          if (!res.ok) throw new Error(`Forecast API error: ${res.status} ${res.statusText}`);
+          return res.json();
+        }),
+        fetch(airQualityUrl).then(async (res) => {
+          if (!res.ok) throw new Error(`Air pollution API error: ${res.status} ${res.statusText}`);
+          return res.json();
+        })
+      );
+    } else {
+      const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${resolvedLat}&lon=${resolvedLon}&appid=${apiKey}&units=imperial`;
+      fetchPromises.push(
+        fetch(currentUrl).then(async (res) => {
+          if (!res.ok) throw new Error(`Current weather API error: ${res.status} ${res.statusText}`);
+          return res.json();
+        }),
+        fetch(forecastUrl).then(async (res) => {
+          if (!res.ok) throw new Error(`Forecast API error: ${res.status} ${res.statusText}`);
+          return res.json();
+        }),
+        fetch(airQualityUrl).then(async (res) => {
+          if (!res.ok) throw new Error(`Air pollution API error: ${res.status} ${res.statusText}`);
+          return res.json();
+        })
+      );
+    }
+
+    const [finalCurrent, finalForecast, finalAirQuality] = await Promise.all(fetchPromises);
 
     return NextResponse.json(
-      { current, forecast, airQuality },
+      { current: finalCurrent, forecast: finalForecast, airQuality: finalAirQuality },
       {
         headers: {
           "Cache-Control": "public, max-age=300, s-maxage=300",
@@ -52,3 +84,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message || "Failed to fetch weather data" }, { status: 520 });
   }
 }
+

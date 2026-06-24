@@ -1,4 +1,4 @@
-import { fetchConsolidatedData } from "./weather";
+import { fetchConsolidatedData, fetchConsolidatedDataByCity } from "./weather";
 
 export interface AirQualityData {
   usAqi: number;
@@ -42,6 +42,36 @@ function calculatePM25AQI(pm25: number): number {
 
 export async function fetchAirQuality(lat: number, lon: number): Promise<AirQualityData> {
   const data = await fetchConsolidatedData(lat, lon);
+  const airQuality = data.airQuality;
+
+  if (!airQuality || !airQuality.list || airQuality.list.length === 0) {
+    throw new Error("Invalid response format from air quality API");
+  }
+
+  const current = airQuality.list[0];
+  const pm25 = Math.round(current.components.pm2_5 ?? 0);
+  const pm10 = Math.round(current.components.pm10 ?? 0);
+  const co = Math.round(current.components.co ?? 0);
+  const no2 = Math.round(current.components.no2 ?? 0);
+  const ozone = Math.round(current.components.o3 ?? 0);
+
+  const usAqi = calculatePM25AQI(pm25);
+  const { status, colorClass } = getAQIDetails(usAqi);
+
+  return {
+    usAqi,
+    pm25,
+    pm10,
+    co,
+    no2,
+    ozone,
+    status,
+    colorClass,
+  };
+}
+
+export async function fetchAirQualityByCity(city: string): Promise<AirQualityData> {
+  const data = await fetchConsolidatedDataByCity(city);
   const airQuality = data.airQuality;
 
   if (!airQuality || !airQuality.list || airQuality.list.length === 0) {
