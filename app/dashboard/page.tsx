@@ -27,6 +27,18 @@ const WeatherIconMap = {
   CloudSnow: CloudSnow,
 };
 
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -36,7 +48,7 @@ export default function DashboardPage() {
   
   const { alerts, location, loading: alertsLoading } = useAlerts();
   const { shelters, resources, loading: resourceShelterLoading } = useResourceShelters();
-  const { latitude, longitude } = useLocation();
+  const { city: selectedCity, latitude, longitude } = useLocation();
   const { weather, loading: isWeatherLoading, error: weatherError, refresh: refreshWeather } = useWeather(latitude, longitude);
   const { airQuality, loading: isAqiLoading, error: aqiError, refresh: refreshAqi } = useAirQuality(
     latitude,
@@ -47,15 +59,37 @@ export default function DashboardPage() {
     longitude
   );
 
-  const totalShelters = shelters.length;
-  const availableShelters = shelters.filter(s => s.status === "Active").length;
-  const totalCapacity = shelters.reduce((acc, s) => acc + s.capacity, 0);
-  const occupiedCapacity = shelters.reduce((acc, s) => acc + s.occupied, 0);
+  // Filter shelters and resources by city name containment or distance (<= 50km)
+  const filteredShelters = shelters.filter(s => {
+    const cityLower = (selectedCity || "").toLowerCase();
+    const nameMatch = s.name.toLowerCase().includes(cityLower);
+    const addressMatch = s.address.toLowerCase().includes(cityLower);
+    const locationMatch = s.location ? s.location.toLowerCase().includes(cityLower) : false;
+    const distance = (latitude !== undefined && longitude !== undefined) 
+      ? calculateDistance(latitude, longitude, s.latitude, s.longitude)
+      : Infinity;
+    return nameMatch || addressMatch || locationMatch || distance <= 50;
+  });
 
-  const ambulancesAvailable = resources.filter(r => r.type === "Ambulance" && r.status === "Available").length;
-  const rescueTeamsActive = resources.filter(r => r.type === "Rescue Team" && r.status === "Deployed").length;
-  const waterTankersAvailable = resources.filter(r => r.type === "Water Tanker" && r.status === "Available").length;
-  const emergencyUnitsDeployed = resources.filter(r => r.status === "Deployed").length;
+  const filteredResources = resources.filter(r => {
+    const cityLower = (selectedCity || "").toLowerCase();
+    const nameMatch = r.name.toLowerCase().includes(cityLower);
+    const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+    const distance = (latitude !== undefined && longitude !== undefined) 
+      ? calculateDistance(latitude, longitude, r.latitude, r.longitude)
+      : Infinity;
+    return nameMatch || locationMatch || distance <= 50;
+  });
+
+  const totalShelters = filteredShelters.length;
+  const availableShelters = filteredShelters.filter(s => s.status === "Active").length;
+  const totalCapacity = filteredShelters.reduce((acc, s) => acc + s.capacity, 0);
+  const occupiedCapacity = filteredShelters.reduce((acc, s) => acc + s.occupied, 0);
+
+  const ambulancesAvailable = filteredResources.filter(r => r.type === "Ambulance" && r.status === "Available").length;
+  const rescueTeamsActive = filteredResources.filter(r => r.type === "Rescue Team" && r.status === "Deployed").length;
+  const waterTankersAvailable = filteredResources.filter(r => r.type === "Water Tanker" && r.status === "Available").length;
+  const emergencyUnitsDeployed = filteredResources.filter(r => r.status === "Deployed").length;
 
   // Top 3 active alerts for the dashboard widget
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
@@ -752,7 +786,7 @@ export default function DashboardPage() {
               </div>
               
               {/* Capacity Utilization Progress Bar */}
-              {totalCapacity > 0 && (
+              {totalCapacity > 0 ? (
                 <div className="space-y-1.5 pt-2">
                   <div className="flex justify-between text-xs font-bold text-gray-700">
                     <span>Capacity Utilization</span>
@@ -769,6 +803,10 @@ export default function DashboardPage() {
                   </div>
                   <p className="text-[10px] text-gray-400 font-medium">Available space: {totalCapacity - occupiedCapacity} spaces remaining across all active shelters.</p>
                 </div>
+              ) : (
+                <div className="text-center py-4 bg-white rounded-xl border border-gray-100">
+                  <p className="text-xs text-gray-400 font-semibold">No shelters active in this city.</p>
+                </div>
               )}
             </div>
 
@@ -778,24 +816,30 @@ export default function DashboardPage() {
                 <Ambulance className="h-4 w-4 text-blue-500" />
                 Resource Metrics
               </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-gray-100">
-                  <p className="text-2xl font-black text-blue-600 leading-none">{ambulancesAvailable}</p>
-                  <p className="text-xs font-semibold text-gray-500 mt-2">Ambulances Available</p>
+              {filteredResources.length > 0 ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-4 rounded-xl border border-gray-100">
+                    <p className="text-2xl font-black text-blue-600 leading-none">{ambulancesAvailable}</p>
+                    <p className="text-xs font-semibold text-gray-500 mt-2">Ambulances Available</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl border border-gray-100">
+                    <p className="text-2xl font-black text-orange-600 leading-none">{rescueTeamsActive}</p>
+                    <p className="text-xs font-semibold text-gray-500 mt-2">Rescue Teams Active</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl border border-gray-100">
+                    <p className="text-2xl font-black text-teal-600 leading-none">{waterTankersAvailable}</p>
+                    <p className="text-xs font-semibold text-gray-500 mt-2">Water Tankers Available</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl border border-gray-100">
+                    <p className="text-2xl font-black text-red-600 leading-none">{emergencyUnitsDeployed}</p>
+                    <p className="text-xs font-semibold text-gray-500 mt-2">Emergency Units Deployed</p>
+                  </div>
                 </div>
-                <div className="bg-white p-4 rounded-xl border border-gray-100">
-                  <p className="text-2xl font-black text-orange-600 leading-none">{rescueTeamsActive}</p>
-                  <p className="text-xs font-semibold text-gray-500 mt-2">Rescue Teams Active</p>
+              ) : (
+                <div className="text-center py-8 bg-white rounded-xl border border-gray-100 flex flex-col justify-center items-center">
+                  <p className="text-xs text-gray-400 font-semibold">No emergency resources active in this city.</p>
                 </div>
-                <div className="bg-white p-4 rounded-xl border border-gray-100">
-                  <p className="text-2xl font-black text-teal-600 leading-none">{waterTankersAvailable}</p>
-                  <p className="text-xs font-semibold text-gray-500 mt-2">Water Tankers Available</p>
-                </div>
-                <div className="bg-white p-4 rounded-xl border border-gray-100">
-                  <p className="text-2xl font-black text-red-600 leading-none">{emergencyUnitsDeployed}</p>
-                  <p className="text-xs font-semibold text-gray-500 mt-2">Emergency Units Deployed</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

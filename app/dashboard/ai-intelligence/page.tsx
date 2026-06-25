@@ -19,6 +19,7 @@ import { fetchWeather, fetchWeatherByCity, fetchConsolidatedData, getWeatherDeta
 import { fetchAirQuality, fetchAirQualityByCity } from "@/lib/airQuality";
 import { fetchFloodRisk, fetchFloodRiskByCity } from "@/lib/floodRisk";
 import { createClient } from "@/lib/supabase/client";
+import { Shelter, Resource } from "@/lib/ResourceShelterContext";
 
 // Helper to format chatbot message markdown-like elements into HTML safely
 function formatMessageText(text: string): string {
@@ -248,6 +249,18 @@ const AIForecastMap = dynamic(() => import("@/components/maps/AIForecastMap"), {
   ssr: false,
   loading: () => <div className="h-full w-full min-h-[400px] bg-gray-50 rounded-xl animate-pulse flex items-center justify-center border border-gray-100 text-gray-400 font-medium">Initializing AI Map Engine...</div>
 });
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 const NICKNAME_MAPPINGS: Record<string, string> = {
   trichy: "Tiruchirappalli",
@@ -640,6 +653,132 @@ export default function AiIntelligencePage() {
         setIsTyping(false);
         return;
       }
+    }
+
+    // Check if query is about shelters or resources
+    const isShelterQuery = lower.includes("shelter") || lower.includes("refuge") || lower.includes("camp");
+    const isResourceQuery = lower.includes("resource") || lower.includes("ambulance") || lower.includes("rescue") || lower.includes("fire") || lower.includes("water tanker") || lower.includes("medical team");
+
+    if (isShelterQuery || isResourceQuery) {
+      const supabase = createClient();
+      if (isShelterQuery) {
+        try {
+          const { data: sheltersData, error: sheltersErr } = await supabase
+            .from("shelters")
+            .select("*");
+            
+          if (sheltersErr) throw sheltersErr;
+          
+          const cityShelters = ((sheltersData as Shelter[]) || []).filter((s: Shelter) => {
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = s.name.toLowerCase().includes(cityLower);
+            const addressMatch = s.address.toLowerCase().includes(cityLower);
+            const locationMatch = s.location ? s.location.toLowerCase().includes(cityLower) : false;
+            const distance = calculateDistance(targetLat, targetLon, s.latitude, s.longitude);
+            return nameMatch || addressMatch || locationMatch || distance <= 50;
+          });
+
+          if (lower.includes("nearest") || lower.includes("closest")) {
+            // Sort by distance and return closest
+            const sorted = cityShelters.map((s: Shelter) => ({
+              shelter: s,
+              distance: calculateDistance(targetLat, targetLon, s.latitude, s.longitude)
+            })).sort((a, b) => a.distance - b.distance);
+
+            if (sorted.length > 0) {
+              const nearest = sorted[0];
+              reply = `### Nearest Shelter in ${targetCityName}
+The nearest shelter is **${nearest.shelter.name}**.
+• **Distance**: ${nearest.distance.toFixed(1)} km away
+• **Address**: ${nearest.shelter.address}
+• **Capacity**: ${nearest.shelter.capacity} spaces (Occupied: ${nearest.shelter.occupied}, Available: ${nearest.shelter.capacity - nearest.shelter.occupied})
+• **Status**: ${nearest.shelter.status}
+• **Contact**: ${nearest.shelter.contact || "N/A"}`;
+            } else {
+              reply = `### Shelters in ${targetCityName}
+No shelters were found in or within 50 km of **${targetCityName}** in the database.
+*(If you are an administrator, you can add a shelter for this area in the Command Center.)*`;
+            }
+          } else {
+            // List all shelters
+            if (cityShelters.length > 0) {
+              reply = `### Shelters in ${targetCityName}
+Found **${cityShelters.length}** shelter(s) in/near ${targetCityName}:
+\n` + cityShelters.map((s: Shelter) => {
+                const dist = calculateDistance(targetLat, targetLon, s.latitude, s.longitude);
+                return `* **${s.name}** (${dist.toFixed(1)} km away)
+  • Address: ${s.address}
+  • Capacity: ${s.capacity} (Occupied: ${s.occupied}, Available: ${s.capacity - s.occupied})
+  • Status: ${s.status}
+  • Contact: ${s.contact || "N/A"}`;
+              }).join("\n\n");
+            } else {
+              reply = `### Shelters in ${targetCityName}
+No shelters were found in or within 50 km of **${targetCityName}** in the database.
+*(If you are an administrator, you can add a shelter for this area in the Command Center.)*`;
+            }
+          }
+        } catch (dbErr: any) {
+          console.error("Database query failed for shelters:", dbErr);
+          reply = `Unable to fetch shelters from the database at this time. Please try again later.`;
+        }
+      } else {
+        // Resource query
+        try {
+          const { data: resourcesData, error: resourcesErr } = await supabase
+            .from("resources")
+            .select("*");
+            
+          if (resourcesErr) throw resourcesErr;
+          
+          const cityResources = ((resourcesData as Resource[]) || []).filter((r: Resource) => {
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = r.name.toLowerCase().includes(cityLower);
+            const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+            const distance = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
+            return nameMatch || locationMatch || distance <= 50;
+          });
+
+          if (cityResources.length > 0) {
+            reply = `### Emergency Resources in ${targetCityName}
+Found **${cityResources.length}** emergency resource(s) in/near ${targetCityName}:
+\n` + cityResources.map((r: Resource) => {
+              const dist = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
+              return `* **${r.name}** (${dist.toFixed(1)} km away)
+  • Type: ${r.type}
+  • Location: ${r.location}
+  • Status: ${r.status}
+  • Contact: ${r.contact || "N/A"}`;
+            }).join("\n\n");
+          } else {
+            reply = `### Resources in ${targetCityName}
+No emergency resources were found in or within 50 km of **${targetCityName}** in the database.
+*(If you are an administrator, you can add a resource for this area in the Command Center.)*`;
+          }
+        } catch (dbErr: any) {
+          console.error("Database query failed for resources:", dbErr);
+          reply = `Unable to fetch emergency resources from the database at this time. Please try again later.`;
+        }
+      }
+
+      if (note) {
+        reply = note + reply;
+      }
+
+      // Store query in Supabase logs
+      try {
+        await supabase.from("ai_queries").insert({
+          city: targetCityName,
+          user_query: text,
+          ai_response: reply,
+        });
+      } catch (logErr) {
+        console.error("Failed to store chatbot interaction in Supabase:", logErr);
+      }
+
+      setMessages(prev => [...prev, { sender: "ai", text: reply, timestamp: new Date() }]);
+      setIsTyping(false);
+      return;
     }
 
     // 3. Normalized Risk Scoring Calculations
