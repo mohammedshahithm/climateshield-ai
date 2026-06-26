@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { 
   MapPin, 
@@ -59,27 +59,120 @@ export default function DashboardPage() {
     longitude
   );
 
-  // Filter shelters and resources by city name containment or distance (<= 50km)
-  const filteredShelters = shelters.filter(s => {
-    const cityLower = (selectedCity || "").toLowerCase();
-    const nameMatch = s.name.toLowerCase().includes(cityLower);
-    const addressMatch = s.address.toLowerCase().includes(cityLower);
-    const locationMatch = s.location ? s.location.toLowerCase().includes(cityLower) : false;
-    const distance = (latitude !== undefined && longitude !== undefined) 
-      ? calculateDistance(latitude, longitude, s.latitude, s.longitude)
-      : Infinity;
-    return nameMatch || addressMatch || locationMatch || distance <= 50;
-  });
+  // Filter and sort shelters by distance (proximity sorting - nearest first)
+  const proximitySortedShelters = useMemo(() => {
+    return shelters
+      .map(s => {
+        const distance = (latitude !== undefined && longitude !== undefined) 
+          ? calculateDistance(latitude, longitude, s.latitude, s.longitude)
+          : Infinity;
+        return { ...s, distance };
+      })
+      .sort((a, b) => a.distance - b.distance);
+  }, [shelters, latitude, longitude]);
 
-  const filteredResources = resources.filter(r => {
-    const cityLower = (selectedCity || "").toLowerCase();
-    const nameMatch = r.name.toLowerCase().includes(cityLower);
-    const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
-    const distance = (latitude !== undefined && longitude !== undefined) 
-      ? calculateDistance(latitude, longitude, r.latitude, r.longitude)
-      : Infinity;
-    return nameMatch || locationMatch || distance <= 50;
-  });
+  // Filter and sort resources by distance
+  const proximitySortedResources = useMemo(() => {
+    return resources
+      .map(r => {
+        const distance = (latitude !== undefined && longitude !== undefined) 
+          ? calculateDistance(latitude, longitude, r.latitude, r.longitude)
+          : Infinity;
+        return { ...r, distance };
+      })
+      .sort((a, b) => a.distance - b.distance);
+  }, [resources, latitude, longitude]);
+
+  // Filter shelters and resources for statistics (those matching city or within 50km)
+  const filteredShelters = useMemo(() => {
+    return proximitySortedShelters.filter(s => {
+      const cityLower = (selectedCity || "").toLowerCase();
+      const nameMatch = s.name.toLowerCase().includes(cityLower);
+      const addressMatch = s.address.toLowerCase().includes(cityLower);
+      const locationMatch = s.location ? s.location.toLowerCase().includes(cityLower) : false;
+      return nameMatch || addressMatch || locationMatch || s.distance <= 50;
+    });
+  }, [proximitySortedShelters, selectedCity]);
+
+  const filteredResources = useMemo(() => {
+    return proximitySortedResources.filter(r => {
+      const cityLower = (selectedCity || "").toLowerCase();
+      const nameMatch = r.name.toLowerCase().includes(cityLower);
+      const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+      return nameMatch || locationMatch || r.distance <= 50;
+    });
+  }, [proximitySortedResources, selectedCity]);
+
+  // Proximity categorized lists for the display sections
+  const nearestShelters = useMemo(() => {
+    // Show top 3 nearest active/full shelters
+    return proximitySortedShelters.filter(s => s.status !== "Closed").slice(0, 3);
+  }, [proximitySortedShelters]);
+
+  const nearestHospitals = useMemo(() => {
+    // Proximity hospitals (type: Hospital or name contains Hospital)
+    return proximitySortedResources
+      .filter(r => r.type === "Hospital" || r.name.toLowerCase().includes("hospital"))
+      .slice(0, 3);
+  }, [proximitySortedResources]);
+
+  const nearestEmergencyResources = useMemo(() => {
+    // Proximity emergency response units (excluding hospitals)
+    return proximitySortedResources
+      .filter(r => r.type !== "Hospital" && !r.name.toLowerCase().includes("hospital"))
+      .slice(0, 3);
+  }, [proximitySortedResources]);
+
+  // Calculate dynamic Composite Climate Risk Score (0-100 scale)
+  const floodScore = floodRisk ? floodRisk.score : 0;
+  const aqiRaw = airQuality ? airQuality.usAqi : 0;
+  const aqiScore = Math.round(Math.min(100, (aqiRaw / 200) * 100));
+  const tempVal = weather ? weather.temperature : 70;
+  const heatwaveScore = Math.round(Math.min(100, Math.max(0, (tempVal - 70) * (100 / 35))));
+  const compositeScore = Math.max(floodScore, aqiScore, heatwaveScore);
+
+  const riskRecommendations = useMemo(() => {
+    if (compositeScore >= 75) {
+      return {
+        level: "CRITICAL",
+        recommendations: [
+          "Evacuate immediately from hazardous/low-lying areas.",
+          "Contact local emergency authorities (Helpline: 112) for tactical rescue.",
+          "Navigate to the nearest open shelter immediately."
+        ],
+        colorClass: "bg-red-50 border-red-200 text-red-950 border-l-4 border-l-red-650"
+      };
+    } else if (compositeScore >= 50) {
+      return {
+        level: "HIGH",
+        recommendations: [
+          "Prepare evacuation bags with identity papers, medicine, and key valuables.",
+          "Locate designated local emergency shelters in your zone.",
+          "Store clean drinking water and non-perishable food rations for 72 hours."
+        ],
+        colorClass: "bg-orange-50 border-orange-200 text-orange-950 border-l-4 border-l-orange-500"
+      };
+    } else if (compositeScore >= 25) {
+      return {
+        level: "MODERATE",
+        recommendations: [
+          "Carry a small emergency first-aid and safety kit when going outdoors.",
+          "Avoid driving or walking through flooded/waterlogged streets.",
+          "Ensure power banks are fully charged in case of power interruptions."
+        ],
+        colorClass: "bg-yellow-50 border-yellow-200 text-yellow-950 border-l-4 border-l-yellow-500"
+      };
+    } else {
+      return {
+        level: "LOW",
+        recommendations: [
+          "Stay hydrated and avoid prolonged direct sun exposure during peak noon.",
+          "Monitor daily weather feeds and public safety updates."
+        ],
+        colorClass: "bg-green-50 border-green-200 text-green-950 border-l-4 border-l-green-500"
+      };
+    }
+  }, [compositeScore]);
 
   const totalShelters = filteredShelters.length;
   const availableShelters = filteredShelters.filter(s => s.status === "Active").length;
@@ -94,14 +187,6 @@ export default function DashboardPage() {
   // Top 3 active alerts for the dashboard widget
   const topActiveAlerts = alerts.filter(a => a.status === "Active").slice(0, 3);
   const activeAlertsCount = alerts.filter(a => a.status === "Active").length;
-
-  // Calculate dynamic Composite Climate Risk Score (0-100 scale)
-  const floodScore = floodRisk ? floodRisk.score : 0;
-  const aqiRaw = airQuality ? airQuality.usAqi : 0;
-  const aqiScore = Math.round(Math.min(100, (aqiRaw / 200) * 100));
-  const tempVal = weather ? weather.temperature : 70;
-  const heatwaveScore = Math.round(Math.min(100, Math.max(0, (tempVal - 70) * (100 / 35))));
-  const compositeScore = Math.max(floodScore, aqiScore, heatwaveScore);
 
   let compositeLevel = "Low";
   let compositeBadgeColor = "bg-green-100 text-green-800";
@@ -483,6 +568,22 @@ export default function DashboardPage() {
         </Link>
       </div>
 
+      {/* Dynamic Climate Risk Recommendations */}
+      <div className={`p-5 rounded-2xl border ${riskRecommendations.colorClass} shadow-sm space-y-3`}>
+        <div className="flex items-center gap-2 font-bold text-sm">
+          <ShieldAlert className="h-5 w-5 shrink-0 text-current" />
+          <span>AI Safety Advisory - {riskRecommendations.level} Risk Zone</span>
+        </div>
+        <ul className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
+          {riskRecommendations.recommendations.map((rec, idx) => (
+            <li key={idx} className="flex gap-2 items-start leading-normal">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0"></span>
+              <span>{rec}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
       {/* Risk Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         {/* Active Alerts Card */}
@@ -844,6 +945,115 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Proximity Location Matching Section */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-6">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary-500" />
+            Nearest Emergency Services (Proximity-Matched)
+          </h2>
+          <p className="text-xs text-gray-500 mt-1">Live proximity matching based on coordinates stored in Supabase. Sorted by nearest first.</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Nearest Shelters Column */}
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/20 space-y-4">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 pb-2 border-b border-gray-100">
+              <Home className="h-4 w-4 text-emerald-500" />
+              Nearest Shelters
+            </h3>
+            <div className="space-y-3">
+              {nearestShelters.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No active shelters nearby.</p>
+              ) : (
+                nearestShelters.map(s => {
+                  return (
+                    <div key={s.id} className="bg-white p-4 rounded-xl border border-gray-100 hover:border-emerald-250 transition-colors shadow-xs">
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="font-bold text-gray-900 text-xs">{s.name}</h4>
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">{s.distance.toFixed(1)} km</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1">{s.address}</p>
+                      <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-50 text-[10px] font-semibold text-gray-650">
+                        <span>Space: {s.occupied}/{s.capacity} beds</span>
+                        <span className={`px-1.5 py-0.5 rounded uppercase text-[8px] font-black ${
+                          s.status === 'Full' ? 'bg-red-50 text-red-650' : 'bg-green-50 text-green-600'
+                        }`}>{s.status}</span>
+                      </div>
+                      {s.contact && (
+                        <p className="text-[9px] font-mono text-gray-400 mt-1.5">Contact: {s.contact}</p>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Nearest Hospitals Column */}
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/20 space-y-4">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 pb-2 border-b border-gray-100">
+              <ActivitySquare className="h-4 w-4 text-red-500" />
+              Nearest Medical Facilities
+            </h3>
+            <div className="space-y-3">
+              {nearestHospitals.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No medical facilities found nearby.</p>
+              ) : (
+                nearestHospitals.map(h => (
+                  <div key={h.id} className="bg-white p-4 rounded-xl border border-gray-100 hover:border-red-250 transition-colors shadow-xs">
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="font-bold text-gray-900 text-xs">{h.name}</h4>
+                      <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded shrink-0">{h.distance.toFixed(1)} km</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">{h.location}</p>
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-50 text-[10px] font-semibold text-gray-600">
+                      <span>Capacity: {h.capacity} patients</span>
+                      <span className="text-gray-450 uppercase text-[9px] font-bold">{h.status}</span>
+                    </div>
+                    {h.contact && (
+                      <p className="text-[9px] font-mono text-gray-400 mt-1.5">Emergency: {h.contact}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Nearest Emergency Resources Column */}
+          <div className="border border-gray-100 rounded-xl p-5 bg-gray-50/20 space-y-4">
+            <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 pb-2 border-b border-gray-100">
+              <Ambulance className="h-4 w-4 text-blue-500" />
+              Nearest Emergency Resources
+            </h3>
+            <div className="space-y-3">
+              {nearestEmergencyResources.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No emergency resources found nearby.</p>
+              ) : (
+                nearestEmergencyResources.map(r => (
+                  <div key={r.id} className="bg-white p-4 rounded-xl border border-gray-100 hover:border-blue-250 transition-colors shadow-xs">
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="font-bold text-gray-900 text-xs">{r.name}</h4>
+                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">{r.distance.toFixed(1)} km</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">Type: {r.type} • {r.location}</p>
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-50 text-[10px] font-semibold text-gray-600">
+                      <span>Cap: {r.capacity} units</span>
+                      <span className={`px-1.5 py-0.5 rounded uppercase text-[8px] font-black ${
+                        r.status === 'Available' ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+                      }`}>{r.status}</span>
+                    </div>
+                    {r.contact && (
+                      <p className="text-[9px] font-mono text-gray-400 mt-1.5">Contact: {r.contact}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* AI Risk Explanations */}
       <div className="bg-white rounded-2xl border border-gray-105 p-6 shadow-sm space-y-6">

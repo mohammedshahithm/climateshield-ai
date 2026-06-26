@@ -17,7 +17,7 @@ export interface Shelter {
   created_at: string;
 }
 
-export type ResourceType = "Ambulance" | "Rescue Team" | "Fire Service" | "Medical Team" | "Relief Camp" | "Water Tanker";
+export type ResourceType = "Ambulance" | "Rescue Team" | "Fire Service" | "Medical Team" | "Relief Camp" | "Water Tanker" | "Food" | "Water" | "Medical Kits" | "Blankets" | "Rescue Boats" | "Hospital" | "Medical Camp";
 export type ResourceStatus = "Available" | "Deployed" | "Maintenance";
 
 export interface Resource {

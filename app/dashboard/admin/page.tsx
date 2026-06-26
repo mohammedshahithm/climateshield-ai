@@ -957,6 +957,42 @@ export default function AdminDashboardPage() {
           occupied: 60,
           contact: "+91 33 2358 1122",
           status: "Active"
+        },
+        {
+          id: "sh-7",
+          name: "Madurai Central Relief Hall",
+          address: "22 West Masi Street, Madurai",
+          location: "Madurai",
+          latitude: 9.9252,
+          longitude: 78.1198,
+          capacity: 350,
+          occupied: 120,
+          contact: "+91 452 234 5678",
+          status: "Active"
+        },
+        {
+          id: "sh-8",
+          name: "Madurai North Safe Shelter",
+          address: "Goripalayam Main Rd, Madurai",
+          location: "Madurai",
+          latitude: 9.9360,
+          longitude: 78.1280,
+          capacity: 200,
+          occupied: 190,
+          contact: "+91 452 234 9900",
+          status: "Active"
+        },
+        {
+          id: "sh-9",
+          name: "Chennai South Shelter Block",
+          address: "Adyar Canal Rd, Chennai",
+          location: "Chennai",
+          latitude: 13.0060,
+          longitude: 80.2500,
+          capacity: 450,
+          occupied: 410,
+          contact: "+91 44 2444 8899",
+          status: "Active"
         }
       ];
 
@@ -1070,6 +1106,160 @@ export default function AdminDashboardPage() {
           capacity: 3,
           contact: "+91 98300 77777",
           status: "Available"
+        },
+        {
+          id: "res-11",
+          name: "Chennai Food Pack Unit A",
+          type: "Food",
+          location: "Guindy Municipal Ground",
+          latitude: 13.0070,
+          longitude: 80.2210,
+          status: "Available",
+          capacity: 2000,
+          contact: "+91 94440 11112"
+        },
+        {
+          id: "res-12",
+          name: "Chennai Emergency Water Tanker 2",
+          type: "Water",
+          location: "Velachery Depot",
+          latitude: 12.9805,
+          longitude: 80.2235,
+          status: "Available",
+          capacity: 15000,
+          contact: "+91 94440 22223"
+        },
+        {
+          id: "res-13",
+          name: "Chennai Medical Kit Depot",
+          type: "Medical Kits",
+          location: "Velachery Main Rd",
+          latitude: 12.9795,
+          longitude: 80.2215,
+          status: "Available",
+          capacity: 500,
+          contact: "+91 94440 33334"
+        },
+        {
+          id: "res-14",
+          name: "Chennai Coastal Rescue Boats",
+          type: "Rescue Boats",
+          location: "Adyar River Depot",
+          latitude: 13.0020,
+          longitude: 80.2570,
+          status: "Available",
+          capacity: 12,
+          contact: "+91 94440 44445"
+        },
+        {
+          id: "res-15",
+          name: "Chennai Emergency Blanket Supply",
+          type: "Blankets",
+          location: "Tambaram West",
+          latitude: 12.9265,
+          longitude: 80.1010,
+          status: "Available",
+          capacity: 1000,
+          contact: "+91 94440 55556"
+        },
+        {
+          id: "res-16",
+          name: "Velachery General Hospital",
+          type: "Hospital",
+          location: "Velachery Road, Chennai",
+          latitude: 12.9790,
+          longitude: 80.2210,
+          status: "Available",
+          capacity: 150,
+          contact: "+91 44 2244 0001"
+        },
+        {
+          id: "res-17",
+          name: "Adyar Mission Hospital",
+          type: "Hospital",
+          location: "Lattice Bridge Rd, Adyar, Chennai",
+          latitude: 13.0030,
+          longitude: 80.2520,
+          status: "Available",
+          capacity: 80,
+          contact: "+91 44 2444 0002"
+        },
+        {
+          id: "res-18",
+          name: "Madurai Food Distribution Hub",
+          type: "Food",
+          location: "Goripalayam Main Ground, Madurai",
+          latitude: 9.9365,
+          longitude: 78.1285,
+          status: "Available",
+          capacity: 1500,
+          contact: "+91 95550 11111"
+        },
+        {
+          id: "res-19",
+          name: "Madurai Emergency Water Tanker",
+          type: "Water",
+          location: "West Masi Depot, Madurai",
+          latitude: 9.9255,
+          longitude: 78.1205,
+          status: "Available",
+          capacity: 10000,
+          contact: "+91 95550 22222"
+        },
+        {
+          id: "res-20",
+          name: "Madurai Disaster Medical Kits",
+          type: "Medical Kits",
+          location: "Mission Hospital Rd, Madurai",
+          latitude: 9.9285,
+          longitude: 78.1235,
+          status: "Available",
+          capacity: 400,
+          contact: "+91 95550 33333"
+        },
+        {
+          id: "res-21",
+          name: "Madurai Rescue Boat Unit",
+          type: "Rescue Boats",
+          location: "Vaigai River Bank, Madurai",
+          latitude: 9.9320,
+          longitude: 78.1250,
+          status: "Available",
+          capacity: 8,
+          contact: "+91 95550 44444"
+        },
+        {
+          id: "res-22",
+          name: "Madurai Emergency Ambulance",
+          type: "Ambulance",
+          location: "Madurai Government Hospital",
+          latitude: 9.9250,
+          longitude: 78.1190,
+          status: "Available",
+          capacity: 4,
+          contact: "+91 95550 55555"
+        },
+        {
+          id: "res-23",
+          name: "Madurai Government Hospital",
+          type: "Hospital",
+          location: "Goripalayam Rd, Madurai",
+          latitude: 9.9355,
+          longitude: 78.1275,
+          status: "Available",
+          capacity: 200,
+          contact: "+91 452 234 1111"
+        },
+        {
+          id: "res-24",
+          name: "Madurai Medical Camp Vaigai",
+          type: "Medical Camp",
+          location: "Sellur, Madurai",
+          latitude: 9.9400,
+          longitude: 78.1220,
+          status: "Available",
+          capacity: 50,
+          contact: "+91 452 234 2222"
         }
       ];
 
@@ -1227,6 +1417,26 @@ export default function AdminDashboardPage() {
     return alerts.filter(a => a.status === "Active");
   }, [alerts]);
 
+  // Expanded computations for Part 6 Admin Analytics
+  const totalSheltersCount = useMemo(() => shelters.length, [shelters]);
+
+  const activeSheltersCount = useMemo(() => {
+    return shelters.filter(s => s.status === "Active").length;
+  }, [shelters]);
+
+  const availableBedsCount = useMemo(() => {
+    return shelters.reduce((acc, s) => {
+      if (s.status === "Active") {
+        return acc + Math.max(0, s.capacity - s.occupied);
+      }
+      return acc;
+    }, 0);
+  }, [shelters]);
+
+  const criticalAreasCount = useMemo(() => {
+    return riskZones.filter(z => z.score >= 75).length;
+  }, [riskZones]);
+
   if (!mounted || userRole !== "admin") return null;
 
   return (
@@ -1307,42 +1517,62 @@ export default function AdminDashboardPage() {
       {activeTab === "command" && (
         <>
           {/* Telemetry Overview Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {/* Total Shelters */}
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-red-100 text-red-600 rounded-lg"><ShieldAlert className="h-6 w-6 animate-pulse" /></div>
+              <div className="p-3 bg-gray-100 text-gray-600 rounded-lg"><Home className="h-6 w-6" /></div>
               <div className="flex-1">
-                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Active Alerts</p>
-                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{activeAlerts.length}</p>
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Shelters</p>
+                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{totalSheltersCount}</p>
               </div>
             </div>
 
+            {/* Active Shelters */}
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><CheckCircle2 className="h-6 w-6" /></div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Active Shelters</p>
+                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{activeSheltersCount}</p>
+              </div>
+            </div>
+
+            {/* Available Beds */}
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><Users className="h-6 w-6" /></div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Available Beds</p>
+                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{availableBedsCount}</p>
+              </div>
+            </div>
+
+            {/* Resources Available */}
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-teal-100 text-teal-600 rounded-lg"><Ambulance className="h-6 w-6" /></div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Resources Available</p>
+                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{availableResourcesCount}</p>
+              </div>
+            </div>
+
+            {/* Critical Areas */}
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+              <div className={`p-3 rounded-lg ${criticalAreasCount > 0 ? "bg-red-100 text-red-600 animate-pulse border border-red-200" : "bg-gray-100 text-gray-500"}`}><ShieldAlert className="h-6 w-6" /></div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Critical Areas</p>
+                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{criticalAreasCount}</p>
+              </div>
+            </div>
+
+            {/* Open Incidents */}
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
               <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><AlertTriangle className="h-6 w-6" /></div>
               <div className="flex-1">
-                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Active Incidents</p>
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Open Incidents</p>
                 {incidentsLoading ? (
                   <div className="h-7 w-12 bg-gray-100 animate-pulse rounded mt-1"></div>
                 ) : (
                   <p className="text-2xl font-black text-gray-900 leading-none mt-1">{unresolvedIncidentsCount}</p>
                 )}
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Ambulance className="h-6 w-6" /></div>
-              <div className="flex-1">
-                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Available Resources</p>
-                <p className="text-2xl font-black text-gray-900 leading-none mt-1">{availableResourcesCount}</p>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><Home className="h-6 w-6" /></div>
-              <div className="flex-1">
-                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">Shelter Occupancy</p>
-                <p className="text-2xl font-black text-gray-900 leading-none mt-1">
-                  {shelterOccupancySummary.percent}% <span className="text-xs font-semibold text-gray-400">({shelterOccupancySummary.occupied}/{shelterOccupancySummary.capacity})</span>
-                </p>
               </div>
             </div>
           </div>

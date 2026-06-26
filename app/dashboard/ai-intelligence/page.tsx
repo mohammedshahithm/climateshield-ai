@@ -211,28 +211,37 @@ function getClimateSafetyRecommendations(temp: number, floodRisk: number, aqi: n
   };
 }
 
-function getClimateSafetyRecommendationsList(temp: number, floodRisk: number, aqi: number): string[] {
-  const list: string[] = [];
-  if (temp > 85) {
-    list.push("Thermal Stress: Avoid direct sun between 11 AM - 4 PM; consume electrolyte fluids regularly.");
+function getClimateSafetyRecommendationsList(temp: number, floodRisk: number, aqi: number, score?: number): string[] {
+  const floodVal = floodRisk;
+  const aqiVal = Math.round(Math.min(100, (aqi / 200) * 100));
+  const heatVal = Math.round(Math.min(100, Math.max(0, (temp - 70) * (100 / 35))));
+  const composite = score !== undefined ? score : Math.max(floodVal, aqiVal, heatVal);
+
+  if (composite >= 75) {
+    return [
+      "Evacuate immediately",
+      "Contact authorities",
+      "Navigate to nearest shelter"
+    ];
+  } else if (composite >= 50) {
+    return [
+      "Prepare evacuation",
+      "Locate shelters",
+      "Store drinking water"
+    ];
+  } else if (composite >= 25) {
+    return [
+      "Carry emergency kit",
+      "Avoid flooded roads",
+      "Maintain resource readiness"
+    ];
+  } else {
+    return [
+      "Stay hydrated",
+      "Monitor weather",
+      "Keep standard preparations"
+    ];
   }
-  if (floodRisk > 40) {
-    list.push("Flood Threat: Store emergency food/water supplies, and verify closest rescue shelter locations.");
-  }
-  if (aqi > 100) {
-    list.push("Air Pollution: Close air vents, wear high-grade N95 masks, and run indoor HEPA filters.");
-  }
-  
-  if (list.length < 1) {
-    list.push("Sensors indicate safe climate conditions. Maintain general resource readiness.");
-  }
-  if (list.length < 2) {
-    list.push("Monitor local weather broadcasts and keep household emergency kits updated.");
-  }
-  if (list.length < 3) {
-    list.push("Save contact numbers of municipal emergency dispatch units for quick access.");
-  }
-  return list.slice(0, 3);
 }
 
 function getRiskBadge(level: string): string {
@@ -655,13 +664,256 @@ export default function AiIntelligencePage() {
       }
     }
 
-    // Check if query is about shelters or resources
-    const isShelterQuery = lower.includes("shelter") || lower.includes("refuge") || lower.includes("camp");
-    const isResourceQuery = lower.includes("resource") || lower.includes("ambulance") || lower.includes("rescue") || lower.includes("fire") || lower.includes("water tanker") || lower.includes("medical team");
+    // Classify chatbot queries
+    const isEmergencyContactQuery = lower.includes("contact") || lower.includes("contacts") || lower.includes("helpline") || lower.includes("helplines") || lower.includes("phone number") || lower.includes("phone numbers") || lower.includes("who to call");
+    const isHospitalQuery = lower.includes("hospital") || lower.includes("hospitals") || lower.includes("medical facility") || lower.includes("medical facilities") || lower.includes("clinic") || lower.includes("clinics");
+    const isMedicalCampQuery = lower.includes("medical camp") || lower.includes("medical camps") || (lower.includes("camp") && lower.includes("medical"));
+    const isFoodOrSupplyQuery = lower.includes("food") || lower.includes("water") || lower.includes("blanket") || lower.includes("blankets") || lower.includes("medical kit") || lower.includes("medical kits") || lower.includes("boat") || lower.includes("boats") || lower.includes("where can i get") || lower.includes("get food") || lower.includes("get water");
+    const isShelterQuery = lower.includes("shelter") || lower.includes("shelters") || lower.includes("refuge") || (lower.includes("camp") && !lower.includes("medical"));
+    const isResourceQuery = lower.includes("resource") || lower.includes("resources") || lower.includes("ambulance") || lower.includes("ambulances") || lower.includes("rescue team") || lower.includes("rescue teams") || lower.includes("fire service") || lower.includes("water tanker") || lower.includes("water tankers") || lower.includes("medical team") || lower.includes("medical teams") || isFoodOrSupplyQuery || isHospitalQuery || isMedicalCampQuery;
 
-    if (isShelterQuery || isResourceQuery) {
+    if (isEmergencyContactQuery || isHospitalQuery || isMedicalCampQuery || isFoodOrSupplyQuery || isShelterQuery || isResourceQuery) {
       const supabase = createClient();
-      if (isShelterQuery) {
+
+      if (isEmergencyContactQuery) {
+        let contactsReply = `### Emergency Contacts in ${targetCityName}
+Here are the essential emergency helpline contacts:
+• **NDRF/SDRF Disaster Management**: 112
+• **Police**: 100
+• **Fire & Rescue**: 101
+• **Ambulance (Medical)**: 108
+
+`;
+
+        try {
+          const [sheltersRes, resourcesRes] = await Promise.all([
+            supabase.from("shelters").select("name, contact, address").eq("status", "Active"),
+            supabase.from("resources").select("name, type, contact, location")
+          ]);
+
+          const cityShelters = (sheltersRes.data || []).filter((s: any) => {
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = s.name.toLowerCase().includes(cityLower);
+            const addressMatch = s.address.toLowerCase().includes(cityLower);
+            return nameMatch || addressMatch;
+          });
+
+          const cityResources = (resourcesRes.data || []).filter((r: any) => {
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = r.name.toLowerCase().includes(cityLower);
+            const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+            return nameMatch || locationMatch;
+          });
+
+          if (cityShelters.length > 0 || cityResources.length > 0) {
+            contactsReply += `**Local Emergency Contacts in ${targetCityName}:**\n`;
+            cityShelters.forEach((s: any) => {
+              if (s.contact) {
+                contactsReply += `• **${s.name} (Shelter)**: ${s.contact}\n`;
+              }
+            });
+            cityResources.forEach((r: any) => {
+              if (r.contact) {
+                contactsReply += `• **${r.name} (${r.type})**: ${r.contact}\n`;
+              }
+            });
+          }
+        } catch (err) {
+          console.error("Failed to query contact info:", err);
+        }
+        reply = contactsReply;
+
+      } else if (isHospitalQuery) {
+        try {
+          const { data: resourcesData, error: resourcesErr } = await supabase
+            .from("resources")
+            .select("*");
+            
+          if (resourcesErr) throw resourcesErr;
+          
+          const cityHospitals = ((resourcesData as Resource[]) || []).filter((r: Resource) => {
+            const isMedical = r.type === "Hospital" || r.type === "Medical Camp" || r.type === "Medical Team" || r.name.toLowerCase().includes("hospital") || r.name.toLowerCase().includes("clinic") || r.name.toLowerCase().includes("medical");
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = r.name.toLowerCase().includes(cityLower);
+            const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+            const distance = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
+            return isMedical && (nameMatch || locationMatch || distance <= 50);
+          });
+
+          const mappedHospitals = cityHospitals.map((h: Resource) => ({
+            hospital: h,
+            distance: calculateDistance(targetLat, targetLon, h.latitude, h.longitude)
+          })).sort((a, b) => a.distance - b.distance);
+
+          if (lower.includes("nearest") || lower.includes("closest")) {
+            if (mappedHospitals.length > 0) {
+              const nearest = mappedHospitals[0];
+              reply = `### Nearest Medical Facility in ${targetCityName}
+The nearest medical facility is **${nearest.hospital.name}**.
+• **Distance**: ${nearest.distance.toFixed(1)} km away
+• **Type**: ${nearest.hospital.type}
+• **Location/Address**: ${nearest.hospital.location}
+• **Capacity**: ${nearest.hospital.capacity} patients
+• **Status**: ${nearest.hospital.status}
+• **Emergency Contact**: ${nearest.hospital.contact || "N/A"}`;
+            } else {
+              reply = `### Medical Facilities in ${targetCityName}
+No medical facilities or hospitals were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          } else {
+            if (mappedHospitals.length > 0) {
+              reply = `### Medical Facilities in ${targetCityName}
+Found **${mappedHospitals.length}** medical facility/facilities in/near ${targetCityName}:
+\n` + mappedHospitals.map(h => {
+                return `* **${h.hospital.name}** (${h.distance.toFixed(1)} km away)
+  • Type: ${h.hospital.type}
+  • Location: ${h.hospital.location}
+  • Status: ${h.hospital.status}
+  • Capacity: ${h.hospital.capacity} patients
+  • Contact: ${h.hospital.contact || "N/A"}`;
+              }).join("\n\n");
+            } else {
+              reply = `### Medical Facilities in ${targetCityName}
+No medical facilities or hospitals were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          }
+        } catch (dbErr: any) {
+          console.error("Database query failed for hospitals:", dbErr);
+          reply = `Unable to fetch medical facilities from the database at this time. Please try again later.`;
+        }
+
+      } else if (isMedicalCampQuery) {
+        try {
+          const { data: resourcesData, error: resourcesErr } = await supabase
+            .from("resources")
+            .select("*");
+            
+          if (resourcesErr) throw resourcesErr;
+          
+          const cityCamps = ((resourcesData as Resource[]) || []).filter((r: Resource) => {
+            const isCamp = r.type === "Medical Camp" || r.type === "Relief Camp" || r.name.toLowerCase().includes("camp");
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = r.name.toLowerCase().includes(cityLower);
+            const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+            const distance = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
+            return isCamp && (nameMatch || locationMatch || distance <= 50);
+          });
+
+          const mappedCamps = cityCamps.map((c: Resource) => ({
+            camp: c,
+            distance: calculateDistance(targetLat, targetLon, c.latitude, c.longitude)
+          })).sort((a, b) => a.distance - b.distance);
+
+          if (lower.includes("nearest") || lower.includes("closest")) {
+            if (mappedCamps.length > 0) {
+              const nearest = mappedCamps[0];
+              reply = `### Nearest Camp in ${targetCityName}
+The nearest camp is **${nearest.camp.name}**.
+• **Distance**: ${nearest.distance.toFixed(1)} km away
+• **Type**: ${nearest.camp.type}
+• **Location/Address**: ${nearest.camp.location}
+• **Capacity**: ${nearest.camp.capacity} units/beds
+• **Status**: ${nearest.camp.status}
+• **Contact**: ${nearest.camp.contact || "N/A"}`;
+            } else {
+              reply = `### Camps in ${targetCityName}
+No medical or relief camps were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          } else {
+            if (mappedCamps.length > 0) {
+              reply = `### Camps in ${targetCityName}
+Found **${mappedCamps.length}** camp(s) in/near ${targetCityName}:
+\n` + mappedCamps.map(c => {
+                return `* **${c.camp.name}** (${c.distance.toFixed(1)} km away)
+  • Type: ${c.camp.type}
+  • Location: ${c.camp.location}
+  • Status: ${c.camp.status}
+  • Capacity: ${c.camp.capacity} units/beds
+  • Contact: ${c.camp.contact || "N/A"}`;
+              }).join("\n\n");
+            } else {
+              reply = `### Camps in ${targetCityName}
+No medical or relief camps were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          }
+        } catch (dbErr: any) {
+          console.error("Database query failed for camps:", dbErr);
+          reply = `Unable to fetch camp details from the database at this time. Please try again later.`;
+        }
+
+      } else if (isFoodOrSupplyQuery) {
+        try {
+          const { data: resourcesData, error: resourcesErr } = await supabase
+            .from("resources")
+            .select("*");
+            
+          if (resourcesErr) throw resourcesErr;
+
+          const typesToMatch: string[] = [];
+          if (lower.includes("food")) typesToMatch.push("Food");
+          if (lower.includes("water")) {
+            typesToMatch.push("Water");
+            typesToMatch.push("Water Tanker");
+          }
+          if (lower.includes("blanket")) typesToMatch.push("Blankets");
+          if (lower.includes("medical kit") || lower.includes("medicine") || lower.includes("kit")) typesToMatch.push("Medical Kits");
+          if (lower.includes("boat") || lower.includes("rescue boat")) typesToMatch.push("Rescue Boats");
+
+          const citySupplies = ((resourcesData as Resource[]) || []).filter((r: Resource) => {
+            const isSupply = typesToMatch.length > 0 
+              ? typesToMatch.includes(r.type)
+              : ["Food", "Water", "Water Tanker", "Blankets", "Medical Kits", "Rescue Boats"].includes(r.type);
+            
+            const cityLower = targetCityName.toLowerCase();
+            const nameMatch = r.name.toLowerCase().includes(cityLower);
+            const locationMatch = r.location ? r.location.toLowerCase().includes(cityLower) : false;
+            const distance = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
+            return isSupply && (nameMatch || locationMatch || distance <= 50);
+          });
+
+          const mappedSupplies = citySupplies.map((s: Resource) => ({
+            supply: s,
+            distance: calculateDistance(targetLat, targetLon, s.latitude, s.longitude)
+          })).sort((a, b) => a.distance - b.distance);
+
+          if (lower.includes("nearest") || lower.includes("closest") || lower.includes("where can i get") || lower.includes("get food") || lower.includes("get water")) {
+            if (mappedSupplies.length > 0) {
+              const nearest = mappedSupplies[0];
+              reply = `### Available Supplies in ${targetCityName}
+The nearest supply source is **${nearest.supply.name}**.
+• **Distance**: ${nearest.distance.toFixed(1)} km away
+• **Type**: ${nearest.supply.type}
+• **Location**: ${nearest.supply.location}
+• **Quantity/Capacity**: ${nearest.supply.capacity} units
+• **Status**: ${nearest.supply.status}
+• **Contact**: ${nearest.supply.contact || "N/A"}`;
+            } else {
+              reply = `### Supplies in ${targetCityName}
+No emergency supplies (${typesToMatch.join(", ") || "Food/Water/Supplies"}) were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          } else {
+            if (mappedSupplies.length > 0) {
+              reply = `### Emergency Supplies in ${targetCityName}
+Found **${mappedSupplies.length}** supply resource(s) in/near ${targetCityName}:
+\n` + mappedSupplies.map(s => {
+                return `* **${s.supply.name}** (${s.distance.toFixed(1)} km away)
+  • Type: ${s.supply.type}
+  • Location: ${s.supply.location}
+  • Status: ${s.supply.status}
+  • Capacity/Quantity: ${s.supply.capacity} units
+  • Contact: ${s.supply.contact || "N/A"}`;
+              }).join("\n\n");
+            } else {
+              reply = `### Supplies in ${targetCityName}
+No emergency supplies (${typesToMatch.join(", ") || "Food/Water/Supplies"}) were found in or within 50 km of **${targetCityName}** in the database.`;
+            }
+          }
+        } catch (dbErr: any) {
+          console.error("Database query failed for supplies:", dbErr);
+          reply = `Unable to fetch emergency supplies from the database at this time. Please try again later.`;
+        }
+
+      } else if (isShelterQuery) {
         try {
           const { data: sheltersData, error: sheltersErr } = await supabase
             .from("shelters")
@@ -678,15 +930,18 @@ export default function AiIntelligencePage() {
             return nameMatch || addressMatch || locationMatch || distance <= 50;
           });
 
-          if (lower.includes("nearest") || lower.includes("closest")) {
-            // Sort by distance and return closest
-            const sorted = cityShelters.map((s: Shelter) => ({
-              shelter: s,
-              distance: calculateDistance(targetLat, targetLon, s.latitude, s.longitude)
-            })).sort((a, b) => a.distance - b.distance);
+          const filteredShelters = lower.includes("available") 
+            ? cityShelters.filter(s => s.status !== "Closed")
+            : cityShelters;
 
-            if (sorted.length > 0) {
-              const nearest = sorted[0];
+          const mappedShelters = filteredShelters.map((s: Shelter) => ({
+            shelter: s,
+            distance: calculateDistance(targetLat, targetLon, s.latitude, s.longitude)
+          })).sort((a, b) => a.distance - b.distance);
+
+          if (lower.includes("nearest") || lower.includes("closest") || lower.includes("what is the nearest")) {
+            if (mappedShelters.length > 0) {
+              const nearest = mappedShelters[0];
               reply = `### Nearest Shelter in ${targetCityName}
 The nearest shelter is **${nearest.shelter.name}**.
 • **Distance**: ${nearest.distance.toFixed(1)} km away
@@ -696,34 +951,31 @@ The nearest shelter is **${nearest.shelter.name}**.
 • **Contact**: ${nearest.shelter.contact || "N/A"}`;
             } else {
               reply = `### Shelters in ${targetCityName}
-No shelters were found in or within 50 km of **${targetCityName}** in the database.
-*(If you are an administrator, you can add a shelter for this area in the Command Center.)*`;
+No active shelters were found in or within 50 km of **${targetCityName}** in the database.`;
             }
           } else {
-            // List all shelters
-            if (cityShelters.length > 0) {
+            if (mappedShelters.length > 0) {
               reply = `### Shelters in ${targetCityName}
-Found **${cityShelters.length}** shelter(s) in/near ${targetCityName}:
-\n` + cityShelters.map((s: Shelter) => {
-                const dist = calculateDistance(targetLat, targetLon, s.latitude, s.longitude);
-                return `* **${s.name}** (${dist.toFixed(1)} km away)
-  • Address: ${s.address}
-  • Capacity: ${s.capacity} (Occupied: ${s.occupied}, Available: ${s.capacity - s.occupied})
-  • Status: ${s.status}
-  • Contact: ${s.contact || "N/A"}`;
+Found **${mappedShelters.length}** shelter(s) in/near ${targetCityName}:
+\n` + mappedShelters.map(s => {
+                return `* **${s.shelter.name}** (${s.distance.toFixed(1)} km away)
+  • Address: ${s.shelter.address}
+  • Capacity: ${s.shelter.capacity} (Occupied: ${s.shelter.occupied}, Available: ${s.shelter.capacity - s.shelter.occupied})
+  • Status: ${s.shelter.status}
+  • Contact: ${s.shelter.contact || "N/A"}`;
               }).join("\n\n");
             } else {
               reply = `### Shelters in ${targetCityName}
-No shelters were found in or within 50 km of **${targetCityName}** in the database.
-*(If you are an administrator, you can add a shelter for this area in the Command Center.)*`;
+No shelters were found in or within 50 km of **${targetCityName}** in the database.`;
             }
           }
         } catch (dbErr: any) {
           console.error("Database query failed for shelters:", dbErr);
           reply = `Unable to fetch shelters from the database at this time. Please try again later.`;
         }
+
       } else {
-        // Resource query
+        // General resource query
         try {
           const { data: resourcesData, error: resourcesErr } = await supabase
             .from("resources")
@@ -739,25 +991,29 @@ No shelters were found in or within 50 km of **${targetCityName}** in the databa
             return nameMatch || locationMatch || distance <= 50;
           });
 
-          if (cityResources.length > 0) {
+          const mappedResources = cityResources.map((r: Resource) => ({
+            resource: r,
+            distance: calculateDistance(targetLat, targetLon, r.latitude, r.longitude)
+          })).sort((a, b) => a.distance - b.distance);
+
+          if (mappedResources.length > 0) {
             reply = `### Emergency Resources in ${targetCityName}
-Found **${cityResources.length}** emergency resource(s) in/near ${targetCityName}:
-\n` + cityResources.map((r: Resource) => {
-              const dist = calculateDistance(targetLat, targetLon, r.latitude, r.longitude);
-              return `* **${r.name}** (${dist.toFixed(1)} km away)
-  • Type: ${r.type}
-  • Location: ${r.location}
-  • Status: ${r.status}
-  • Contact: ${r.contact || "N/A"}`;
+Found **${mappedResources.length}** emergency resource(s) in/near ${targetCityName}:
+\n` + mappedResources.map(r => {
+              return `* **${r.resource.name}** (${r.distance.toFixed(1)} km away)
+  • Type: ${r.resource.type}
+  • Location: ${r.resource.location}
+  • Status: ${r.resource.status}
+  • Capacity/Quantity: ${r.resource.capacity} units
+  • Contact: ${r.resource.contact || "N/A"}`;
             }).join("\n\n");
           } else {
             reply = `### Resources in ${targetCityName}
-No emergency resources were found in or within 50 km of **${targetCityName}** in the database.
-*(If you are an administrator, you can add a resource for this area in the Command Center.)*`;
+No emergency resources were found in or within 50 km of **${targetCityName}** in the database.`;
           }
         } catch (dbErr: any) {
           console.error("Database query failed for resources:", dbErr);
-          reply = `Unable to fetch emergency resources from the database at this time. Please try again later.`;
+          reply = `Unable to fetch resources from the database at this time. Please try again later.`;
         }
       }
 
@@ -893,7 +1149,7 @@ AQI: ${usAqi}
 Pollution Category: ${pollutionCategory}
 Health Recommendations: ${healthRec}`;
     } else if (intent === "SAFETY") {
-      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi);
+      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi, finalComposite);
       reply = `### Safety Report for ${targetCityName}
 Composite Risk Score: ${finalComposite}/100
 Risk Level: ${riskLevel}
@@ -903,7 +1159,7 @@ Recommendations:
 • ${recs[2]}`;
     } else {
       // FULL REPORT
-      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi);
+      const recs = getClimateSafetyRecommendationsList(tempF, floodRiskVal, usAqi, finalComposite);
       let floodRiskLevel = "Low";
       if (floodRiskVal >= 75) floodRiskLevel = "Critical";
       else if (floodRiskVal >= 50) floodRiskLevel = "High";
